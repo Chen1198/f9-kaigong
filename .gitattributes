@@ -1,18 +1,38 @@
-# 这个仓库的换行符是【故意不统一】的，别让 git 自动转换。
-# 规矩（改了文件名会踩坑，所以写下来）：
-#   .ps1 / .bat / README.txt  -> UTF-8 **带 BOM** + CRLF（PowerShell 5.1 没有 BOM 会把中文当 ANSI 读，全乱码）
-#   .json / .md / .gitignore  -> **不带 BOM** + LF
-# 用 `* -text` 关掉所有自动转换，保证 clone 下来的字节和这里一模一样。
+# ============================================================
+# 本仓库的换行符 / 编码策略：**故意不统一** —— 并让 git 一个字节都不动它。
+# ------------------------------------------------------------
+# ⚠️ 为什么每条都写 `-text`，而不是 `text eol=crlf`：
+#   `* -text` 本意是"完全不做转换"，但 git 的规则是**越靠后的规则优先**。
+#   后面再写 `*.ps1 text eol=crlf`，那个 `text` 会把 EOL 规范化**重新打开**，
+#   于是仓库里真正存的其实是 **LF-only**。
+#   后果很具体：别人在网页上点 "Raw" 下载单个 .ps1 会拿到 LF 版 →
+#   Windows 自带的 5.1 版脚本引擎解析错乱（多行 param 被并成一行、反引号续行断掉）。
+#   用 `-text` 时 git 一个字节都不改：仓库里存什么 = Raw 下载到什么 = 双击运行的那个。
+#
+#   另外这台机器 git 全局是 `core.autocrlf=true`，属性文件优先级更高 ——
+#   这里显式写 `-text` 就是为了盖住它，不然照样会被转成 LF。
+# ------------------------------------------------------------
+# 这张表就是仓库内**真实的字节状态**（不是希望值，是事实）：
+#   *.ps1                        UTF-8 有 BOM + CRLF   ← 老版本脚本引擎读无 BOM 会按 ANSI 解中文
+#   *.bat / *.vbs                UTF-8 无 BOM + CRLF   ← 脚本内自带 chcp 65001
+#   README.txt                   UTF-8 有 BOM + CRLF   ← 方便记事本直接双击打开
+#   *.md / *.json / LICENSE      UTF-8 无 BOM + LF
+#   *.ico / *.png / *.wav        二进制
+# ============================================================
+
 * -text
 
-*.ps1        text eol=crlf
-*.bat        text eol=crlf
-*.vbs        text eol=crlf
-README.txt   text eol=crlf
+*.ps1          -text
+*.bat          -text
+*.vbs          -text
+README.txt     -text
 
-*.md         text eol=lf
-*.json       text eol=lf
-.gitignore   text eol=lf
+*.md           -text
+*.json         -text
+.gitignore     -text
+.editorconfig  -text
+LICENSE        -text
 
-*.ico        binary
-*.png        binary
+*.ico          binary
+*.png          binary
+*.wav          binary
