@@ -40,12 +40,14 @@ $desktopLnk = Join-Path $desktop 'F9开工.lnk'
 $desktopQuitLnk = Join-Path $desktop 'F9收工.lnk'
 $appVbs     = Join-Path $ScriptDir 'run-app.vbs'
 $quitVbs    = Join-Path $ScriptDir 'run-quit.vbs'
+$hubVbs     = Join-Path $ScriptDir 'run-hub.vbs'
 $ascii      = New-Object System.Text.ASCIIEncoding
 
 # ---- 桌面图标：跟着当前皮肤走（原来这两行忘了定义，导致装完还是白板图标）----
 $appIco  = Join-Path $ScriptDir 'app.ico'
 $setIco  = Join-Path $ScriptDir 'setup.ico'
 $quitIco = Join-Path $ScriptDir 'quit.ico'
+$hubIco  = Join-Path $ScriptDir 'hub.ico'
 try {
     $skinFile = Join-Path $ScriptDir 'skin.json'
     if (Test-Path -LiteralPath $skinFile) {
@@ -142,69 +144,75 @@ try {
     Write-Output ('[WARN] 生成 .vbs 启动器失败: ' + $_.Exception.Message)
 }
 
-# ---- 2b) 桌面快捷方式：只放一个「F9开工」 ----
+# ---- 2b) 桌面快捷方式：只放一个「F9开工」，双击 = 赛博朋克启动台 ----
+# 【2026-09-25 改成"二合一"】以前桌面摆两个图标（F9开工 / F9收工），
+# 现在合成一个：双击弹出启动台（中间一个大圆环），点一下圆环就开工。
+# 收工没有丢 —— 它回到快捷键 Ctrl+Alt+Q（后台注册的全局热键，跟桌面图标无关）。
+#
 # 目标优先用 wscript 跑 .vbs（零黑框）；wscript 不在就退回直接跑 powershell。
 $wscriptExe = Join-Path $SysRoot 'System32\wscript.exe'
-$useVbs = $appVbsOk -and (Test-Path -LiteralPath $wscriptExe)
+
+$hubVbsOk = $false
+try {
+    $vbs = New-QuietStarterVbs -ExePath $psExe -ScriptPath $main -ExtraArgs '-Hub' `
+              -Comment1 'Workday Launcher - cyber launch pad (click the ring to start the day)' `
+              -Comment2 'Do not edit by hand: the doubled quotes are required by VBScript'
+    [System.IO.File]::WriteAllText($hubVbs, $vbs, $ascii)
+    $hubVbsOk = Test-VbsSyntax -Path $hubVbs
+    if ($hubVbsOk) {
+        Write-Output ('[OK]   已生成启动台启动器: ' + $hubVbs + '  （语法校验通过）')
+    } else {
+        Write-Output '[WARN] run-hub.vbs 语法校验没过，桌面图标改用直接调 powershell（会闪一下黑框）'
+    }
+} catch {
+    Write-Output ('[WARN] 生成启动台启动器失败: ' + $_.Exception.Message)
+}
+
+$useVbs = $hubVbsOk -and (Test-Path -LiteralPath $wscriptExe)
 try {
     $ws = New-Object -ComObject WScript.Shell
     $lnk = $ws.CreateShortcut($desktopLnk)
     if ($useVbs) {
         $lnk.TargetPath = $wscriptExe
-        $lnk.Arguments  = '"' + $appVbs + '"'
+        $lnk.Arguments  = '"' + $hubVbs + '"'
     } else {
         $lnk.TargetPath = $psExe
-        $lnk.Arguments  = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $main + '" -Main'
+        $lnk.Arguments  = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $main + '" -Hub'
     }
     $lnk.WorkingDirectory = $ScriptDir
     $lnk.WindowStyle      = 7
-    $lnk.Description      = 'F9开工：双击打开控制面板（想改成双击直接开工，在面板里改「双击桌面图标」）'
-    if (Test-Path -LiteralPath $appIco) { $lnk.IconLocation = $appIco + ',0' }
+    $lnk.Description      = 'F9开工：双击弹出启动台，点一下中间那个大圆环就开工'
+    if (Test-Path -LiteralPath $hubIco) { $lnk.IconLocation = $hubIco + ',0' }
+    elseif (Test-Path -LiteralPath $appIco) { $lnk.IconLocation = $appIco + ',0' }
     $lnk.Save()
     Write-Output ('[OK]   桌面已生成「F9开工」图标（' + $(if ($useVbs) { 'wscript 无黑框模式' } else { 'powershell 兜底模式' }) + '）')
 } catch {
     Write-Output ('[WARN] 没能在桌面建快捷方式(不影响快捷键使用): ' + $_.Exception.Message)
 }
 
-# ---- 2e) 第二个桌面图标：「F9收工」（关机 / 重启 / 睡眠）----
-# 跟「F9开工」完全同一套做法：wscript 去跑 .vbs，零黑框。
-# 它拉的是 -Shutdown 这条路 —— 窗口由那个新进程自己弹，所以【后台掉线了这个图标照样能用】。
-# 用户 2026-09-24 要的：快捷键 + 桌面图标两种入口都要有。
-$quitVbsOk = $false
-try {
-    $vbs = New-QuietStarterVbs -ExePath $psExe -ScriptPath $main -ExtraArgs '-Shutdown' `
-              -Comment1 'Workday Launcher - open the finish-work window (shutdown / restart / sleep)' `
-              -Comment2 'Do not edit by hand: the doubled quotes are required by VBScript'
-    [System.IO.File]::WriteAllText($quitVbs, $vbs, $ascii)
-    $quitVbsOk = Test-VbsSyntax -Path $quitVbs
-    if ($quitVbsOk) {
-        Write-Output ('[OK]   已生成收工启动器: ' + $quitVbs + '  （语法校验通过）')
-    } else {
-        Write-Output '[WARN] run-quit.vbs 语法校验没过，收工图标改用直接调 powershell（会闪一下黑框）'
+# ---- 2e) 桌上如果还留着老版本建的「F9收工」图标，挪到程序目录备份 ----
+# 【为什么撤掉】用户 2026-09-25 要求"只留一键开工这一个功能"，桌面合成一个图标。
+# 收工**没有丢** —— 按 Ctrl+Alt+Q 一样弹「关机 / 重启 / 睡眠」窗口（带倒计时），
+# 那条路走的是后台注册的全局热键，跟桌面图标没有关系。
+# 只挪我们自己建的那个（参数里带本程序路径），绝不动用户其它快捷方式。
+foreach ($oldQ in @('F9收工.lnk')) {
+    $opq = Join-Path $desktop $oldQ
+    if (-not (Test-Path -LiteralPath $opq)) { continue }
+    try {
+        $wsq5 = New-Object -ComObject WScript.Shell
+        $skq5 = $wsq5.CreateShortcut($opq)
+        $mineQ = ($skq5.Arguments -and ($skq5.Arguments -like '*run-quit.vbs*' -or $skq5.Arguments -like '*Start-Workday.ps1*'))
+        if ($mineQ) {
+            $bakq = Join-Path $ScriptDir ('old-shortcut-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.lnk.bak')
+            Move-Item -LiteralPath $opq -Destination $bakq -Force
+            Write-Output ('[OK]   桌面已合并成一个图标，旧的「F9收工」备份到: ' + $bakq)
+            Write-Output '       （收工功能还在，按 Ctrl+Alt+Q 就行）'
+        } else {
+            Write-Output '[SKIP] 桌面上的 F9收工 不是本程序建的，没动它'
+        }
+    } catch {
+        Write-Output ('[WARN] 处理 F9收工 失败: ' + $_.Exception.Message)
     }
-} catch {
-    Write-Output ('[WARN] 生成收工启动器失败: ' + $_.Exception.Message)
-}
-
-$useQuitVbs = $quitVbsOk -and (Test-Path -LiteralPath $wscriptExe)
-try {
-    $wsq  = New-Object -ComObject WScript.Shell
-    $lnkq = $wsq.CreateShortcut($desktopQuitLnk)
-    if ($useQuitVbs) {
-        $lnkq.TargetPath = $wscriptExe
-        $lnkq.Arguments  = '"' + $quitVbs + '"'
-    } else {
-        $lnkq.TargetPath = $psExe
-        $lnkq.Arguments  = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $main + '" -Shutdown'
-    }
-    $lnkq.WorkingDirectory = $ScriptDir
-    $lnkq.WindowStyle      = 7
-    $lnkq.Description      = 'F9收工：双击弹出「关机 / 重启 / 睡眠」窗口，带倒计时，点【取消】或按 Esc 可以停下'
-    if (Test-Path -LiteralPath $quitIco) { $lnkq.IconLocation = $quitIco + ',0' }
-    $lnkq.Save()
-    Write-Output ('[OK]   桌面已生成「F9收工」图标（' + $(if ($useQuitVbs) { 'wscript 无黑框模式' } else { 'powershell 兜底模式' }) + '）')
-} catch {
-    Write-Output ('[WARN] 没能在桌面建收工快捷方式: ' + $_.Exception.Message)
 }
 
 # ---- 2c) 老版本会在桌面放第二个「F9开工·设置」图标，挪到程序目录里备份 ----
@@ -253,7 +261,7 @@ foreach ($oldMain in @('一键开工.lnk', '一键开工 · 设置.lnk', '一键
 # ---- 3) 立刻把后台进程拉起来（顺便处理"程序更新了但后台还是旧代码"的情况）----
 # -IconsOnly 时整段跳过：那是面板按钮叫起来的，用户手上多半正开着东西在干活。
 if ($IconsOnly) {
-    Write-Output '[INFO] -IconsOnly：不动后台进程（桌面上那两个图标现在就能用）'
+    Write-Output '[INFO] -IconsOnly：不动后台进程（桌面上那个「F9开工」图标现在就能用）'
 } else {
 try {
     $mainTime = (Get-Item -LiteralPath $main).LastWriteTime
@@ -295,6 +303,7 @@ try {
 
 Write-Output ''
 Write-Output '安装完成。'
-Write-Output '桌面上的「F9开工」就是全部：清单、开关、皮肤、彩蛋都在那一个窗口里改。'
-Write-Output '桌面上的「F9收工」双击 = 关机 / 重启 / 睡眠（带倒计时，随时能取消）。'
+Write-Output '桌面上只留一个「F9开工」：双击弹出启动台，点一下中间那个大圆环就开工。'
+Write-Output '想改清单 / 皮肤 / 彩蛋：开始菜单里的「F9开工·设置」（都在那一个窗口里）。'
+Write-Output '收工：按 Ctrl+Alt+Q = 关机 / 重启 / 睡眠（带倒计时，随时能取消）。'
 Write-Output ('有疑问就双击 check.bat 自检。程序位置: ' + $ScriptDir)

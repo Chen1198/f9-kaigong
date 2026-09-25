@@ -1,0 +1,30 @@
+# 这个项目的换行符和编码是**故意不一致**的，别用编辑器的"统一换行符"一键改掉。
+# 原因：.ps1 / .bat / .txt 走 Windows 原生（UTF-8 BOM + CRLF），
+#       .md / .json 走跨平台惯例（LF、不带 BOM）。
+# 换错的后果很隐蔽 —— 比如 PS1 少了 BOM，中文全变乱码，脚本照样"能跑"但界面全是问号。
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{ps1,psm1}]
+charset = utf-8-bom
+end_of_line = crlf
+
+[*.{bat,cmd}]
+charset = utf-8-bom
+end_of_line = crlf
+
+[*.{txt,vbs}]
+charset = utf-8-bom
+end_of_line = crlf
+
+[*.{md,json,jsonc,yml,yaml}]
+charset = utf-8
+end_of_line = lf
+
+[*.{png,ico,wav,dll}]
+insert_final_newline = false

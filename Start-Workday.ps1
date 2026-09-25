@@ -22,6 +22,9 @@
 #                  桌面上的「F9收工」图标双击走这条路
 #    -QuitTest     只演一遍收工窗口看看长相，绝不真的关机
 #    -QuitShot D   把收工窗口离屏渲染成两张预览图放到目录 D，然后退出
+#    -Hub          桌面上的「F9」图标走这条：弹出赛博朋克主界面（一个大圆环），
+#                  点一下圆环就开工。界面上**只有这一个功能**，收工请按 Ctrl+Alt+Q。
+#    -HubShot D    把那个主界面离屏渲染成预览图放到目录 D，然后退出
 # =====================================================================
 
 [CmdletBinding()]
@@ -39,6 +42,8 @@ param(
     [switch]$Shutdown,
     [switch]$QuitTest,
     [string]$QuitShot = '',
+    [switch]$Hub,
+    [string]$HubShot = '',
     [string]$Trigger = ''
 )
 
@@ -2202,6 +2207,8 @@ $script:LaunchBusy      = $false
 $script:QuitState = 'pick'   # pick=在选动作 / count=正在倒数 / done=走人
 $script:QuitAct   = ''       # shutdown / restart / sleep
 $script:QuitBusy  = $false   # 窗口开着的时候再按快捷键，不叠第二个窗口
+$script:HubBusy   = $false   # 「F9」主界面开着的时候，不叠第二个
+$script:HubChoice = ''       # launch / close（空串 = 还在等用户点）
 $script:QuitLeft  = -1       # 当前显示的是第几秒（变了才去改文字）
 $script:QuitEnd   = [datetime]::Now
 $script:QUi       = $null    # 控件袋（事件回调跟外面作用域不同，必须走 $script:）
@@ -2702,6 +2709,262 @@ function Show-ShutdownUi {
     }
 }
 
+# ================== 「F9」主界面：赛博朋克启动台 ==================
+# 桌面图标双击走这里（-Hub）。整个界面只有一件事：点中间那个大圆环 -> 开工。
+# 其余功能**刻意都不放**（用户 2026-09-25 明确要求"只留一键开工这一个功能"）：
+# 收工继续用快捷键 Ctrl+Alt+Q，设置从开始菜单的「F9开工·设置」进。
+#
+# 【为什么贴预渲染的 PNG，而不是现场自绘】这台机器是 2012 年的 i5-3210M。
+# 霓虹辉光、扫描线这类效果用 GDI+ 现场画，既费 CPU 又画不细（进度条那次
+# 已经吃够了自绘的亏）。改成离线画好几张图（art\cyber_*.png），运行时只贴图、
+# 只换图，零计算量 —— 好看不能拿机器换。
+#
+# 返回 'launch'（点了圆环）/ 'close'（关掉了）/ ''（窗口没起来）。
+function Show-HubUi {
+    # -ShotDir  离屏渲染预览图然后退出（出图用，用户屏幕上什么都看不到）
+    param([string]$ShotDir = '')
+
+    if ($script:HubBusy) {
+        Write-Log '「F9」主界面还开着，这次的调用忽略'
+        return ''
+    }
+    $script:HubBusy   = $true
+    $script:HubChoice = ''
+    $f = $null
+    try {
+        if (-not (Initialize-HintUi)) {
+            Write-Log '「F9」主界面起不来（WinForms 不可用），已放弃'
+            return ''
+        }
+
+        $artDir = Join-Path $ScriptDir 'art'
+        $pBg    = Join-Path $artDir 'cyber_bg.png'
+        $pIdle  = Join-Path $artDir 'cyber_ring.png'
+        $pHit   = Join-Path $artDir 'cyber_ring_hit.png'
+        $pWav   = Join-Path $artDir 'cyber_launch.wav'
+        if (-not (Test-Path -LiteralPath $pIdle)) {
+            Write-Log ('缺少美术资源：' + $pIdle + ' —— 主界面起不来，重新跑一遍 install.bat 就好')
+            return ''
+        }
+
+        $cBg      = [System.Drawing.Color]::FromArgb(6, 8, 11)
+        $cNeon    = [System.Drawing.Color]::FromArgb(0, 240, 200)
+        $cNeonHot = [System.Drawing.Color]::FromArgb(140, 255, 236)
+        $cDim     = [System.Drawing.Color]::FromArgb(0, 120, 104)
+
+        $W  = 440
+        $H  = 500
+        $RS = 320                        # 圆环图的边长
+        $RX = [int](($W - $RS) / 2)
+        $RY = 100
+
+        $f = New-Object System.Windows.Forms.Form
+        $f.Text            = (TP 'F9开工' 'F9 Launcher')
+        $f.FormBorderStyle = 'None'      # 无边框：整块窗口都是我们的画布
+        $f.MaximizeBox     = $false
+        $f.MinimizeBox     = $false
+        $f.ShowInTaskbar   = $false
+        $f.TopMost         = $true
+        $f.StartPosition   = 'CenterScreen'
+        $f.BackColor       = $cBg
+        $f.ClientSize      = New-Object System.Drawing.Size($W, $H)
+        $f.KeyPreview      = $true
+        if (Test-Path -LiteralPath $pBg) {
+            $f.BackgroundImage       = [System.Drawing.Image]::FromFile($pBg)
+            # 一定要写 None：默认是 Tile，背景图会被平铺成一堆重复的角标
+            $f.BackgroundImageLayout = 'None'
+        }
+
+        # ---- 中间那个大圆环：整个界面唯一的操作入口 ----
+        $imgIdle = [System.Drawing.Image]::FromFile($pIdle)
+        $imgHit  = $null
+        if (Test-Path -LiteralPath $pHit) { $imgHit = [System.Drawing.Image]::FromFile($pHit) }
+
+        $pic = New-Object System.Windows.Forms.PictureBox
+        $pic.Image     = $imgIdle
+        $pic.Location  = New-Object System.Drawing.Point($RX, $RY)
+        $pic.Size      = New-Object System.Drawing.Size($RS, $RS)
+        $pic.SizeMode  = 'StretchImage'
+        $pic.BackColor = [System.Drawing.Color]::Transparent
+        $pic.Cursor    = [System.Windows.Forms.Cursors]::Hand
+        $f.Controls.Add($pic)
+        # 回调是另一个作用域：图片引用只能从 $script: 里拿
+        $pic.Add_MouseEnter({ if ($script:HUi -and $script:HUi.Hit) { $this.Image = $script:HUi.Hit } })
+        $pic.Add_MouseLeave({ if ($script:HUi) { $this.Image = $script:HUi.Idle } })
+        $pic.Add_Click({ $script:HubChoice = 'launch' })
+
+        # ---- 右上角的关闭（无边框窗口没地方点 X，得自己给一个）----
+        $btnX = New-Object System.Windows.Forms.Label
+        $btnX.Text      = [char]0x2715      # ✕
+        $btnX.Font      = New-Object System.Drawing.Font('Segoe UI', 12)
+        $btnX.ForeColor = $cDim
+        $btnX.BackColor = [System.Drawing.Color]::Transparent
+        $btnX.TextAlign = 'MiddleCenter'
+        $btnX.Location  = New-Object System.Drawing.Point(396, 24)
+        $btnX.Size      = New-Object System.Drawing.Size(30, 30)
+        $btnX.Cursor    = [System.Windows.Forms.Cursors]::Hand
+        $f.Controls.Add($btnX)
+        $btnX.Add_MouseEnter({ $this.ForeColor = $script:HUi.Neon })
+        $btnX.Add_MouseLeave({ $this.ForeColor = $script:HUi.Dim })
+        $btnX.Add_Click({ $script:HubChoice = 'close' })
+
+        # ---- 圆环下面一行状态：今天要开几项（真实数字，不是装饰）----
+        $nItems = 0
+        try {
+            $cfHub = Get-LauncherConfig
+            if ($cfHub) {
+                if ($cfHub.PSObject.Properties['apps']) { $nItems += @($cfHub.apps).Count }
+                if ($cfHub.PSObject.Properties['urls']) { $nItems += @($cfHub.urls).Count }
+            }
+        } catch { }
+        $statusTxt = ('{0:00} ITEMS // READY' -f $nItems)
+
+        $lblSt = New-Object System.Windows.Forms.Label
+        $lblSt.Text      = $statusTxt
+        $lblSt.Font      = New-Object System.Drawing.Font('Consolas', 9.5)
+        $lblSt.ForeColor = $cNeon
+        $lblSt.BackColor = [System.Drawing.Color]::Transparent
+        $lblSt.TextAlign = 'MiddleCenter'
+        $lblSt.Location  = New-Object System.Drawing.Point(60, 428)
+        $lblSt.Size      = New-Object System.Drawing.Size(320, 20)
+        $f.Controls.Add($lblSt)
+
+        # 控件袋：事件回调里只有 $script: 看得见，所以引用全塞进一个哈希表
+        $script:HUi = @{ Form = $f; Pic = $pic; Idle = $imgIdle; Hit = $imgHit
+                         Neon = $cNeon; Hot = $cNeonHot; Dim = $cDim }
+
+        # Esc = 关掉（什么都不做）；点右上角 ✕ 同理
+        $f.Add_KeyDown({
+            if ($_.KeyCode -eq [System.Windows.Forms.Keys]::Escape) { $script:HubChoice = 'close' }
+        })
+        $f.Add_FormClosing({
+            if ([string]::IsNullOrEmpty($script:HubChoice)) { $script:HubChoice = 'close' }
+        })
+
+        # ---- 文字放不下体检（跟收工窗同一个道理：Label 的 AutoSize 会骗人）----
+        $fitWarn = @()
+        foreach ($c0 in $f.Controls) {
+            if ($c0 -isnot [System.Windows.Forms.Label]) { continue }
+            $txt = [string]$c0.Text
+            if ([string]::IsNullOrEmpty($txt) -or $null -eq $c0.Font) { continue }
+            $need  = [System.Windows.Forms.TextRenderer]::MeasureText($txt, $c0.Font).Width
+            $avail = [int]$c0.Width
+            $byBox = [int]$f.ClientSize.Width - [int]$c0.Left - 4
+            if ($byBox -lt $avail) { $avail = $byBox }
+            if ($need -gt $avail) { $fitWarn += ('「' + $txt + '」要 ' + $need + 'px 只有 ' + $avail + 'px') }
+        }
+        if ($fitWarn.Count -gt 0) {
+            Write-Log ('[警告] 「F9」主界面有 ' + $fitWarn.Count + ' 处文字会被切掉: ' + ($fitWarn -join '；'))
+        } else {
+            Write-Log '「F9」主界面文字排版检查: OK'
+        }
+
+        # ---- 离屏出图：把窗口挪到屏幕外再 Show，用户完全看不到 ----
+        if ($ShotDir) {
+            try {
+                if (-not (Test-Path -LiteralPath $ShotDir)) {
+                    New-Item -ItemType Directory -Path $ShotDir -Force | Out-Null
+                }
+                $f.Location = New-Object System.Drawing.Point(-4000, -4000)
+                $f.Show()
+                for ($i = 0; $i -lt 10; $i++) {
+                    [System.Windows.Forms.Application]::DoEvents()
+                    Start-Sleep -Milliseconds 20
+                }
+                $tw = [int]$f.Width
+                $th = [int]$f.Height
+                $b1 = Get-WindowShot -Hwnd $f.Handle -W $tw -H $th
+                $b1.Save((Join-Path $ShotDir 'hub-1.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+                $b1.Dispose()
+                # 再拍一张"按下态"，好让人看出点下去是什么样
+                if ($imgHit) {
+                    $pic.Image = $imgHit
+                    # 【为什么要顺手缩掉 16px】光换 Image，PictureBox 不一定立刻重画，
+                    # 而 PrintWindow 抓的是窗口"当前画面" —— 不强制重绘就会拍出一张
+                    # 跟上一张**字节数完全相同**的图（这个坑已经踩过一次，看图才发现）。
+                    # 缩 16px 既一定触发重绘，又正好是"点下去"那一瞬间的样子。
+                    $pic.Size     = New-Object System.Drawing.Size(($RS - 16), ($RS - 16))
+                    $pic.Location = New-Object System.Drawing.Point(($RX + 8), ($RY + 8))
+                    try { $pic.Refresh() } catch { }
+                    try { $f.Refresh() } catch { }
+                    for ($i = 0; $i -lt 10; $i++) {
+                        [System.Windows.Forms.Application]::DoEvents()
+                        Start-Sleep -Milliseconds 20
+                    }
+                    $b2 = Get-WindowShot -Hwnd $f.Handle -W $tw -H $th
+                    $b2.Save((Join-Path $ShotDir 'hub-2-hit.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+                    $b2.Dispose()
+                }
+                Write-Log ('「F9」主界面预览图: ' + $ShotDir + ' 尺寸 ' + $tw + 'x' + $th)
+            } catch {
+                Write-Log ('「F9」主界面截图失败: ' + $_.Exception.Message)
+            } finally {
+                try { $f.Hide() } catch { }
+                try { $f.Dispose() } catch { }
+                $script:HUi = $null
+            }
+            return ''
+        }
+
+        # ---- 真的弹出来 ----
+        $f.Show()
+        try {
+            $code = [AppWinProbe]::Activate([uint32]$PID)
+            Write-Log ('「F9」主界面已弹出（叫窗结果 ' + $code + ': ' + [string][AppWinProbe]::LastHow + '）')
+        } catch {
+            try { $f.Activate() } catch { }
+        }
+
+        # ---- 等用户点 ----
+        while ([string]::IsNullOrEmpty($script:HubChoice)) {
+            try { [System.Windows.Forms.Application]::DoEvents() } catch { }
+            Start-Sleep -Milliseconds 20
+        }
+        $choice = [string]$script:HubChoice
+
+        # 点了圆环：先给一下"敲击"的反馈（亮图 + 电子音 + 轻微回弹），再去开工。
+        # 这点反馈很关键 —— 它把"我点了"和"它动了"连起来，
+        # 用户才不会怀疑"到底点上了没有"（他之前就抱怨过"按了没反应"）。
+        if ($choice -eq 'launch') {
+            try { if ($imgHit) { $pic.Image = $imgHit } } catch { }
+            try {
+                if (Test-Path -LiteralPath $pWav) {
+                    $sp = New-Object System.Media.SoundPlayer $pWav
+                    $sp.Play()
+                }
+            } catch { }
+            foreach ($k in @(0.955, 0.978, 1.0)) {
+                try {
+                    $nw = [int]($RS * $k)
+                    $pic.Size     = New-Object System.Drawing.Size($nw, $nw)
+                    $pic.Location = New-Object System.Drawing.Point(
+                        ($RX + [int](($RS - $nw) / 2)), ($RY + [int](($RS - $nw) / 2)))
+                } catch { }
+                try { [System.Windows.Forms.Application]::DoEvents() } catch { }
+                Start-Sleep -Milliseconds 45
+            }
+        }
+
+        # 先把窗口收掉再去干活：不然开工进度窗会被这块黑屏压着看不见
+        try { $f.Hide() } catch { }
+        try { $f.Close() } catch { }
+        try { $f.Dispose() } catch { }
+        $f = $null
+        $script:HUi = $null
+        return $choice
+    } catch {
+        Write-Log ('「F9」主界面出错: ' + $_.Exception.Message)
+        return ''
+    } finally {
+        if ($f) {
+            try { $f.Close() } catch { }
+            try { $f.Dispose() } catch { }
+        }
+        $script:HUi = $null
+        $script:HubBusy = $false
+    }
+}
+
 # 「按了一次快捷键」之后要干的事。单独抽成函数有两个好处：
 #   1) 消息循环的回调和「模拟按键自检(-SimTrigger)」走的是同一条代码路径
 #   2) 可以直接量它花了多少毫秒 —— 这个数就是"从按键到第一个软件真的出去"。
@@ -3155,6 +3418,29 @@ if ($Check) {
         Write-Log ('去重开关赋值检查: 失败! skipRunning=' + $hasSkip + ' activateRunning=' + $hasAct + ' —— 不重复打开可能会失效，快去修')
     }
 
+    # ---- 「F9」二合一入口（2026-09-25 加）----
+    # 桌面图标只指向这一个入口，它是用户最可能踩到的路径。
+    # 这里既报状态，也做源码级断言：函数在 / 分派在 / 两个分支都在。
+    # 【为什么必须断言】哪天不小心删掉一行，用户的表现是"双击图标没反应"，
+    # 而且**不报错**——只有自检能挡住。
+    $hubVbsChk = Join-Path $ScriptDir 'run-hub.vbs'
+    if (Test-Path -LiteralPath $hubVbsChk) {
+        Write-Log '桌面「F9开工」图标(启动台): 就绪'
+    } else {
+        Write-Log '[提示] 还没有 run-hub.vbs —— 桌面图标要先跑一遍 install.bat 才会生成'
+    }
+    $hasHubFn   = ($srcChk -match 'function Show-HubUi')
+    $hasHubGate = ($srcChk -match '\[switch\]\$Hub\b')
+    $hasHubCall = ($srcChk -match '\[string\]\(Show-HubUi\)')
+    $hasHubGo   = ($srcChk -match "pick\s*-eq\s*'launch'")
+    if ($hasHubFn -and $hasHubGate -and $hasHubCall -and $hasHubGo) {
+        Write-Log '「F9开工」启动台接线检查: OK（窗口 / 分派 / 调用 / 开工分支 四处都在）'
+    } else {
+        Write-Log ('「F9开工」启动台接线检查: 失败! 窗口=' + $hasHubFn + ' 分派=' + $hasHubGate +
+                   ' 调用=' + $hasHubCall + ' 开工分支=' + $hasHubGo +
+                   ' —— 双击桌面图标会没反应，快去修')
+    }
+
     # ---- 一键收工（2026-09-25 加）----
     # 这个功能是"按一个键就关机"，接线接错了后果最严重（按了收工键跑去开工，
     # 或者按了没反应），所以这里既报状态、也做源码级断言。
@@ -3169,14 +3455,13 @@ if ($Check) {
     } else {
         Write-Log '收工快捷键: 没配（config.json 的 shutdownHotkey 是空的）—— 收工功能关着'
     }
+    # 【2026-09-25 起】桌面上不再单独放「F9收工」图标了（用户要求"只留一键开工这一个功能"），
+    # 收工统一走快捷键。这条只检查命令行那条路还在不在，免得哪次清理给清没了。
     $quitVbsChk = Join-Path $ScriptDir 'run-quit.vbs'
-    $quitIcoChk = Join-Path $ScriptDir 'quit.ico'
     if (Test-Path -LiteralPath $quitVbsChk) {
-        $icoTxt = '图标也有'
-        if (-not (Test-Path -LiteralPath $quitIcoChk)) { $icoTxt = '图标缺了，桌面上会显示成白板' }
-        Write-Log ('桌面「F9收工」图标: 就绪（' + $icoTxt + '）')
+        Write-Log '收工入口: 就绪（按 Ctrl+Alt+Q；桌面不再单独放图标，已合并进桌面那个「F9开工」）'
     } else {
-        Write-Log '[提示] 还没有 run-quit.vbs —— 桌面「F9收工」图标要先跑一遍 install.bat 才会生成'
+        Write-Log '[提示] 没有 run-quit.vbs —— 桌面图标不受影响，Ctrl+Alt+Q 照样能用（只有命令行那条路要重跑 install.bat）'
     }
     # 三处都不能少：解析(shutdownHotkey) / 分派(认得出是收工键) / 窗口(Show-ShutdownUi)
     $hasQDefs = ($srcChk -match 'function Get-QuitHotKeyDefs')
@@ -3433,6 +3718,46 @@ if ($Shutdown) {
     $script:TipLang = Get-LauncherLang
     Write-Log '收工窗口（桌面图标 / 命令行）'
     Show-ShutdownUi
+    exit 0
+}
+
+# ================== 桌面「F9」图标：开工 / 收工二合一 ==================
+# 桌面上的「F9」图标双击就跑这个。它只是把用户的选择转给上面那两条路：
+#   点「开工」-> 和 -Run 一模一样（进度窗、去重、彩蛋，全都有）
+#   点「收工」-> 和 -Shutdown 一模一样（选动作、倒计时、能取消）
+# 后台在不在跑都无所谓：这条路上窗口是本进程自己弹的。
+if ($HubShot) {
+    $script:LogTag  = '[F9出图] '
+    $script:TipLang = Get-LauncherLang
+    Write-Log ('「F9」主界面出图: ' + $HubShot)
+    Show-HubUi -ShotDir $HubShot
+    Write-Log '「F9」主界面出图 结束'
+    exit 0
+}
+
+if ($Hub) {
+    $script:LogTag  = '[F9] '
+    $script:TipLang = Get-LauncherLang
+    Write-Log '「F9」主界面（桌面图标 / 命令行）'
+    $pick = [string](Show-HubUi)
+    if ([string]::IsNullOrEmpty($pick)) {
+        Write-Log '「F9」主界面没起来、或者用户直接关掉了 —— 什么都没做'
+        exit 0
+    }
+    Write-Log ('「F9」主界面选了: ' + $pick)
+
+    if ($pick -eq 'launch') {
+        # 跟 -Run 那条路保持完全一致（这里刻意"转发"，不另写一套开工逻辑 ——
+        # 验收过的路径只有一条，才不会出现"按 F9 好使、点图标不好使"这种鬼故事）
+        $cfgHub = Get-LauncherConfig
+        $tipHub = Test-ConfigSwitch -Cfg $cfgHub -Key 'showTipAfterRun' -Default $true
+        if ($NoTip) { $tipHub = $false }
+        Invoke-Launch -ShowTip:$tipHub -Cfg $cfgHub
+        # 顺手确认后台还活着（几毫秒）。后台掉了快捷键就是死的，用户只会觉得"坏了"。
+        Ensure-Daemon | Out-Null
+    }
+    # 界面上没有「收工」了（用户要求"只留一键开工这一个功能"），桌面图标也合并成了一个。
+    # 收工仍然可用：按 Ctrl+Alt+Q（后台注册的全局热键，跟桌面图标无关）。
     exit 0
 }
 

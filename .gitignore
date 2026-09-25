@@ -5,10 +5,13 @@ config.json
 logs/
 *.log
 _shots/
+cache/                    # Add-CachedType 编译出来的 dll 缓存（二进制，别提交）
+out/                      # -QuitShot / -HubShot 出图的默认输出目录
 
 # ---- 安装时生成的临时文件 ----
 run-app.vbs
 run-quit.vbs
+run-hub.vbs
 old-shortcut-*.lnk.bak
 
 # ---- 系统垃圾 ----
