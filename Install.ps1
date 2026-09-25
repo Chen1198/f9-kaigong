@@ -1,19 +1,24 @@
 ﻿# =====================================================================
 #  Workday Launcher  ·  安装
 #  1) 开机后自动在后台待命（在启动文件夹写一个 .vbs，不需要管理员权限）
-#  2) 桌面放两个图标：
-#     ·「F9开工」双击打开控制面板（清单 + 设置都在这一个窗口里）
-#       想让它双击就直接开工？在面板里把「双击桌面图标」改成"直接开工"即可
-#     ·「F9收工」双击弹出「关机 / 重启 / 睡眠」窗口（带倒计时，点【取消】能停下）
-#  3) 立刻把后台程序拉起来，不用重启就能按快捷键
+#  2) 桌面放**一个**图标：
+#     ·「F9开工」双击弹出启动台（中间一个大圆环），点一下圆环就开工。
+#       不想每次都看一眼启动台？在设置里把「双击桌面图标」改成「直接开工」即可。
+#     ·收工不占图标：按 Ctrl+Alt+Q 弹「关机 / 重启 / 睡眠」窗口（带倒计时，能取消）。
+#       想让收工也有个桌面图标：走设置面板上那个按钮（对应 -WithQuitIcon，见 2g）。
+#  3) 开始菜单放两个：「F9开工」（启动台）/「F9开工·设置」（设置界面）
+#  4) 立刻把后台程序拉起来，不用重启就能按快捷键
 #
 #  参数:
-#    -IconsOnly  只重建上面那两个图标和它们的启动器；不碰开机自启、也不动后台进程。
-#                面板上「在桌面放一个『F9收工』图标」那个按钮走的就是这条路
-#                （用户可能正开着软件干活，不能被我们重启后台打断）。
+#    -IconsOnly      只重建图标和它们的启动器；不碰开机自启、也不动后台进程。
+#                    设置面板上的按钮走的就是这条路
+#                    （用户可能正开着软件干活，不能被我们重启后台打断）。
+#    -WithQuitIcon   额外在桌面建一个「F9收工」图标。
+#                    **默认不建** —— 用户要求桌面只留一个图标，只有他在设置面板上
+#                    明确点了一下那个按钮，才会带这个参数。
 # =====================================================================
 
-param([switch]$IconsOnly)
+param([switch]$IconsOnly, [switch]$WithQuitIcon)
 
 $ErrorActionPreference = 'Continue'
 
@@ -195,6 +200,13 @@ try {
 # 收工**没有丢** —— 按 Ctrl+Alt+Q 一样弹「关机 / 重启 / 睡眠」窗口（带倒计时），
 # 那条路走的是后台注册的全局热键，跟桌面图标没有关系。
 # 只挪我们自己建的那个（参数里带本程序路径），绝不动用户其它快捷方式。
+#
+# 【2026-09-25 加的条件】只在整装时做，-IconsOnly 时**绝不碰它**。
+# 因为设置面板上那个按钮正是靠 -IconsOnly 去建这个图标的（见 2g）：
+# 不分开的话，用户点一下按钮 → 图标刚建好就被这段挪走 → 按钮永远报"失败"。
+if ($IconsOnly) {
+    Write-Output '[INFO] -IconsOnly：不清理桌面的「F9收工」图标（那是设置面板的按钮在管）'
+} else {
 foreach ($oldQ in @('F9收工.lnk')) {
     $opq = Join-Path $desktop $oldQ
     if (-not (Test-Path -LiteralPath $opq)) { continue }
@@ -213,6 +225,7 @@ foreach ($oldQ in @('F9收工.lnk')) {
     } catch {
         Write-Output ('[WARN] 处理 F9收工 失败: ' + $_.Exception.Message)
     }
+}
 }
 
 # ---- 2c) 老版本会在桌面放第二个「F9开工·设置」图标，挪到程序目录里备份 ----
@@ -255,6 +268,95 @@ foreach ($oldMain in @('一键开工.lnk', '一键开工 · 设置.lnk', '一键
         }
     } catch {
         Write-Output ('[WARN] 处理 ' + $oldMain + ' 失败: ' + $_.Exception.Message)
+    }
+}
+
+# ---- 2g) 【可选】桌面再放一个「F9收工」图标（只有带 -WithQuitIcon 才做）----
+# 默认**不做**：桌面只留一个「F9开工」是明确要求。只有设置面板上那个按钮
+# （它会传 -WithQuitIcon）才会走到这里 —— 那是用户亲手点的，不算我们擅自加。
+#
+# 【为什么原来那段是坏的】Install.ps1 里以前**没有任何创建 F9收工 图标的代码**
+# （2e 只会把已有的挪走），可设置面板上的按钮却一直这么调 —— 于是那个按钮点了
+# 必然失败，面板上弹的还是「生成桌面图标失败：」后面空白一片，用户完全看不懂。
+if ($WithQuitIcon) {
+    $quitVbsOk = $false
+    try {
+        $vbs = New-QuietStarterVbs -ExePath $psExe -ScriptPath $main -ExtraArgs '-Shutdown' `
+                  -Comment1 'Workday Launcher - finish work (shutdown / restart / sleep), no console window' `
+                  -Comment2 'Do not edit by hand: the doubled quotes are required by VBScript'
+        [System.IO.File]::WriteAllText($quitVbs, $vbs, $ascii)
+        $quitVbsOk = Test-VbsSyntax -Path $quitVbs
+    } catch {
+        Write-Output ('[WARN] 生成收工启动器失败: ' + $_.Exception.Message)
+    }
+    $useQuitVbs = $quitVbsOk -and (Test-Path -LiteralPath $wscriptExe)
+    try {
+        $wsq = New-Object -ComObject WScript.Shell
+        $lq = $wsq.CreateShortcut($desktopQuitLnk)
+        if ($useQuitVbs) {
+            $lq.TargetPath = $wscriptExe
+            $lq.Arguments  = '"' + $quitVbs + '"'
+        } else {
+            $lq.TargetPath = $psExe
+            $lq.Arguments  = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $main + '" -Shutdown'
+        }
+        $lq.WorkingDirectory = $ScriptDir
+        $lq.WindowStyle      = 7
+        $lq.Description      = 'F9收工：弹出「关机 / 重启 / 睡眠」窗口（带倒计时，随时能取消）'
+        if (Test-Path -LiteralPath $quitIco) { $lq.IconLocation = $quitIco + ',0' }
+        elseif (Test-Path -LiteralPath $appIco) { $lq.IconLocation = $appIco + ',0' }
+        $lq.Save()
+        Write-Output ('[OK]   桌面已生成「F9收工」图标（' + $(if ($useQuitVbs) { 'wscript 无黑框模式' } else { 'powershell 兜底模式' }) + '）')
+    } catch {
+        Write-Output ('[FAIL] 没能生成「F9收工」图标: ' + $_.Exception.Message)
+    }
+}
+
+# ---- 2h) 开始菜单快捷方式（2026-09-25 加：以前这两个是手工建的，安装脚本不管）----
+# 【为什么要纳管】手工建的两个快捷方式有三个毛病：
+#   ① 换皮肤不会跟着换图标；② 卸载不会清掉；③ 开始菜单里那个「F9开工」**不带参数**
+#   直接跑主程序，而主程序一看后台已经在跑就静默退出 —— 用户点它等于什么都没发生。
+# 现在统一由这里生成：
+#   「F9开工」      -> 启动台（和桌面图标完全同一个）
+#   「F9开工·设置」 -> 设置界面（直接拉 Settings-GUI.ps1；不走 -Main，
+#                     免得用户把 iconAction 改成 run 之后设置入口变成开工）
+$startMenu = [Environment]::GetFolderPath('Programs')
+if (-not $startMenu) {
+    $appData = [Environment]::GetFolderPath('ApplicationData')
+    if (-not $appData) { $appData = $env:APPDATA }
+    $startMenu = Join-Path $appData 'Microsoft\Windows\Start Menu\Programs'
+}
+foreach ($sm in @(
+    @{ Name = 'F9开工';      Kind = 'hub'; Ico = $hubIco;
+       Desc = 'F9开工：弹出启动台，点一下中间那个大圆环就开工' },
+    @{ Name = 'F9开工·设置'; Kind = 'gui'; Ico = $setIco;
+       Desc = 'F9开工 · 设置：改清单 / 皮肤 / 快捷键 / 收工倒计时' }
+)) {
+    try {
+        if (-not (Test-Path -LiteralPath $startMenu)) { continue }
+        $smlnk = Join-Path $startMenu ($sm.Name + '.lnk')
+        $wss = New-Object -ComObject WScript.Shell
+        $ls = $wss.CreateShortcut($smlnk)
+        if ($sm.Kind -eq 'hub') {
+            if ($useVbs) {
+                $ls.TargetPath = $wscriptExe
+                $ls.Arguments  = '"' + $hubVbs + '"'
+            } else {
+                $ls.TargetPath = $psExe
+                $ls.Arguments  = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $main + '" -Hub'
+            }
+        } else {
+            $ls.TargetPath = $psExe
+            $ls.Arguments  = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $gui + '"'
+        }
+        $ls.WorkingDirectory = $ScriptDir
+        $ls.WindowStyle      = 7
+        $ls.Description      = $sm.Desc
+        if (Test-Path -LiteralPath $sm.Ico) { $ls.IconLocation = $sm.Ico + ',0' }
+        $ls.Save()
+        Write-Output ('[OK]   开始菜单已生成「' + $sm.Name + '」')
+    } catch {
+        Write-Output ('[WARN] 生成开始菜单「' + $sm.Name + '」失败: ' + $_.Exception.Message)
     }
 }
 
@@ -304,6 +406,7 @@ try {
 Write-Output ''
 Write-Output '安装完成。'
 Write-Output '桌面上只留一个「F9开工」：双击弹出启动台，点一下中间那个大圆环就开工。'
-Write-Output '想改清单 / 皮肤 / 彩蛋：开始菜单里的「F9开工·设置」（都在那一个窗口里）。'
+Write-Output '想改清单 / 皮肤 / 彩蛋：点启动台底部那行小字「设置」，'
+Write-Output '                       或者开始菜单里的「F9开工·设置」（是同一个窗口）。'
 Write-Output '收工：按 Ctrl+Alt+Q = 关机 / 重启 / 睡眠（带倒计时，随时能取消）。'
 Write-Output ('有疑问就双击 check.bat 自检。程序位置: ' + $ScriptDir)

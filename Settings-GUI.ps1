@@ -134,7 +134,7 @@ $script:EvtFired = 0
 $script:Detected = $null
 $script:ShowTip  = $true     # 开工时要不要出右下角那个进度窗
 $script:ShowHeart = $false   # 开工时要不要飘一下表情包/皮肤形象（默认关）
-$script:IconAction = 'panel' # 双击桌面图标时：panel=打开这个面板 / run=直接开工
+$script:IconAction = 'panel' # 双击桌面图标时：panel=弹出启动台 / run=跳过启动台直接开工
 # 开工彩蛋：自己设的语音 + 表情包
 $script:StickerPath = ''     # 自定义表情包图片路径（留空 = 用皮肤形象图）
 $script:SayText     = ''     # 开工念的一句话（TTS）
@@ -595,10 +595,10 @@ function New-DictEn {
     $d['已经卸载了。程序文件夹还在，不需要的话可以直接删掉：'] =
           'Uninstalled. The program folder is kept in case you need it: '
     $d['双击桌面图标'] = 'Double-click the desktop icon'
-    $d['打开控制面板'] = 'Open this panel'
+    $d['打开启动台'] = 'Open the launch pad'
     $d['直接开工'] = 'Start right away'
-    $d['双击桌面上「F9开工」图标时干什么：打开这个控制面板，还是像以前那样直接开工。改完点「保存并生效」'] =
-          'What the desktop "Workday Launcher" icon does: open this panel, or start the workday straight away like before. Click "Save & Apply" to take effect.'
+    $d['双击桌面上「F9开工」图标时干什么：弹出启动台（点中间圆环才开工），还是跳过启动台直接开工。改完点「保存并生效」'] =
+          'What the desktop "Workday Launcher" icon does: show the launch pad (click the ring to start), or skip the launch pad and start straight away. Click "Save & Apply" to take effect.'
     $d['勾上要打开的东西、填好网址，点右下角「保存并生效」。要马上开工就点【立即开工一次】，或者直接按快捷键 —— 换皮肤也是当场生效。'] =
           'Tick what to open and fill in the URLs, then hit "Save & Apply". To start now, click "Start now" - or just press your hotkey. Skin changes apply instantly too.'
     $d['保存失败：'] = 'Save failed: '
@@ -858,7 +858,7 @@ function Build-ConfigText {
     [void]$sb.AppendLine('  "_说明_lang": "界面语言：zh=中文 / en=English，只影响界面文字，不影响清单",')
     [void]$sb.AppendLine('  "lang": "' + $script:Lang + '",')
     [void]$sb.AppendLine('')
-    [void]$sb.AppendLine('  "_说明_iconAction": "双击桌面「F9开工」图标时的动作：panel=打开这个控制面板（推荐）/ run=直接开工",')
+    [void]$sb.AppendLine('  "_说明_iconAction": "双击桌面「F9开工」图标时的动作：panel=弹出启动台，点圆环才开工（推荐）/ run=跳过启动台直接开工",')
     [void]$sb.AppendLine('  "iconAction": "' + $script:IconAction + '",')
     [void]$sb.AppendLine('')
 
@@ -1720,7 +1720,7 @@ $grpOther.Controls.Add($lblIconAct)
 
 $cmbIconAct = New-Object System.Windows.Forms.ComboBox
 $cmbIconAct.DropDownStyle = 'DropDownList'
-[void]$cmbIconAct.Items.Add('打开控制面板')
+[void]$cmbIconAct.Items.Add('打开启动台')
 [void]$cmbIconAct.Items.Add('直接开工')
 $cmbIconAct.SelectedIndex = 0
 $cmbIconAct.Location = New-Object System.Drawing.Point(624, 54)
@@ -1878,7 +1878,10 @@ $btnQuitIcon.Add_Click({
     $err = ''
     try {
         if (-not (Test-Path -LiteralPath $ins)) { throw '找不到 Install.ps1' }
-        $out = & $ins -IconsOnly 2>&1
+        # 【必须带 -WithQuitIcon】Install.ps1 里原本**没有**任何创建「F9收工」图标的代码
+        # （2e 那段只会把已有的挪走），所以这个按钮以前点了必然失败，面板上弹的还是
+        # 「生成桌面图标失败：」后面空白一片 —— 用户完全看不懂。现在把参数接上。
+        $out = & $ins -IconsOnly -WithQuitIcon 2>&1
         $bad = @($out | Where-Object { ([string]$_) -like '*[FAIL]*' })
         if ($bad.Count -gt 0) { $err = [string]$bad[0] }
     } catch { $err = $_.Exception.Message }
@@ -2052,7 +2055,7 @@ $tip.SetToolTip($cmbLang, '换界面语言，只是界面文字变了，清单�
 # 【这个数直接决定"感觉快不快"】开 N 个软件就有 N-1 个间隔，全都加在总时长上。
 $tip.SetToolTip($numA, '开完一个软件、开下一个之前等多久（毫秒）。这个数直接加到总耗时上：3 个软件就有 2 个间隔。默认 150 够稳了；想最快就设 0。')
 $tip.SetToolTip($numU, '开完一个网页、开下一个之前等多久（毫秒）。网页交给浏览器开，通常更快，默认 120；设 0 就一起发出去。')
-$tip.SetToolTip($cmbIconAct, '双击桌面上「F9开工」图标时干什么：打开这个控制面板，还是像以前那样直接开工。改完点「保存并生效」')
+$tip.SetToolTip($cmbIconAct, '双击桌面上「F9开工」图标时干什么：弹出启动台（点中间圆环才开工），还是跳过启动台直接开工。改完点「保存并生效」')
 $tip.SetToolTip($lvApps, '勾上的才会打开；不想要的点「删除」移出列表')
 $tip.SetToolTip($lvUrls, '勾上的才会打开；网址要带 http:// 或 https://')
 # 开工彩蛋
@@ -2213,7 +2216,7 @@ function Apply-Lang {
         $keepIdx = $cmbIconAct.SelectedIndex
         if ($keepIdx -lt 0) { $keepIdx = $(if ($script:IconAction -eq 'run') { 1 } else { 0 }) }
         $cmbIconAct.Items.Clear()
-        [void]$cmbIconAct.Items.Add((T '打开控制面板'))
+        [void]$cmbIconAct.Items.Add((T '打开启动台'))
         [void]$cmbIconAct.Items.Add((T '直接开工'))
         $cmbIconAct.SelectedIndex = $keepIdx
     }
@@ -2253,7 +2256,7 @@ function Apply-Lang {
     $tip.SetToolTip($numU, (T '开完一个网页、开下一个之前等多久（毫秒）。网页交给浏览器开，通常更快，默认 120；设 0 就一起发出去。'))
     $tip.SetToolTip($chkSticker, (T '勾上：开工时屏幕上飘一下表情包（没选图就用当前皮肤的形象图），一秒多就过。默认不勾，不打扰。'))
     $tip.SetToolTip($cmbLang, (T '换界面语言，只是界面文字变了，清单内容不动'))
-    $tip.SetToolTip($cmbIconAct, (T '双击桌面上「F9开工」图标时干什么：打开这个控制面板，还是像以前那样直接开工。改完点「保存并生效」'))
+    $tip.SetToolTip($cmbIconAct, (T '双击桌面上「F9开工」图标时干什么：弹出启动台（点中间圆环才开工），还是跳过启动台直接开工。改完点「保存并生效」'))
     $tip.SetToolTip($cmbSkin, (T '选一套配色，选完立刻生效，不用点保存也不用重启'))
     $tip.SetToolTip($lvApps, (T '勾上的才会打开；不想要的点「删除」移出列表'))
     $tip.SetToolTip($lvUrls, (T '勾上的才会打开；网址要带 http:// 或 https://'))
@@ -3125,7 +3128,7 @@ if ($SelfTest) {
         $cmbIconAct.SelectedIndex = 0
         Apply-UiToModel
         $viaUi2 = $script:IconAction
-        Add-St ('下拉框选"直接开工"-> ' + $viaUi + '  选"打开控制面板"-> ' + $viaUi2)
+        Add-St ('下拉框选"直接开工"-> ' + $viaUi + '  选"打开启动台"-> ' + $viaUi2)
         $script:IconAction = $bakAct
         Load-Ui
     } catch {

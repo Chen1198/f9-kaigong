@@ -2710,16 +2710,20 @@ function Show-ShutdownUi {
 }
 
 # ================== 「F9」主界面：赛博朋克启动台 ==================
-# 桌面图标双击走这里（-Hub）。整个界面只有一件事：点中间那个大圆环 -> 开工。
-# 其余功能**刻意都不放**（用户 2026-09-25 明确要求"只留一键开工这一个功能"）：
-# 收工继续用快捷键 Ctrl+Alt+Q，设置从开始菜单的「F9开工·设置」进。
+# 桌面图标双击走这里（-Hub）。界面上能点的只有两处：
+#   中间那个大圆环   -> 开工（主按钮，永远只有这一个）
+#   底部一行小字「设置」-> 设置界面
+# 【为什么后来把设置加回来了一行字】原来设置只有开始菜单里那一个入口，
+# 用户直接来问「设置界面去哪里了，怎么调整设置」—— 藏得再深就等于没有。
+# 现在它很小、很暗，鼠标移上去才亮，不破坏「屏幕上看起来只有一个按钮」的观感。
+# 收工继续用快捷键 Ctrl+Alt+Q（不占界面、不占图标）。
 #
 # 【为什么贴预渲染的 PNG，而不是现场自绘】这台机器是 2012 年的 i5-3210M。
 # 霓虹辉光、扫描线这类效果用 GDI+ 现场画，既费 CPU 又画不细（进度条那次
 # 已经吃够了自绘的亏）。改成离线画好几张图（art\cyber_*.png），运行时只贴图、
 # 只换图，零计算量 —— 好看不能拿机器换。
 #
-# 返回 'launch'（点了圆环）/ 'close'（关掉了）/ ''（窗口没起来）。
+# 返回 'launch'（点了圆环）/ 'settings'（点了设置）/ 'close'（关掉了）/ ''（窗口没起来）。
 function Show-HubUi {
     # -ShotDir  离屏渲染预览图然后退出（出图用，用户屏幕上什么都看不到）
     param([string]$ShotDir = '')
@@ -2751,6 +2755,8 @@ function Show-HubUi {
         $cNeon    = [System.Drawing.Color]::FromArgb(0, 240, 200)
         $cNeonHot = [System.Drawing.Color]::FromArgb(140, 255, 236)
         $cDim     = [System.Drawing.Color]::FromArgb(0, 120, 104)
+        # 「设置」小字用这个：比装饰字的暗色亮一点，看得见；又远不如圆环亮，不抢注意力
+        $cSetIdle = [System.Drawing.Color]::FromArgb(0, 170, 148)
 
         $W  = 440
         $H  = 500
@@ -2808,6 +2814,58 @@ function Show-HubUi {
         $btnX.Add_MouseLeave({ $this.ForeColor = $script:HUi.Dim })
         $btnX.Add_Click({ $script:HubChoice = 'close' })
 
+        # ---- 鼠标停在 ✕ 上要知道它是干嘛的（无边框窗没有标题栏可以看）----
+        $ttHub = New-Object System.Windows.Forms.ToolTip
+        $ttHub.SetToolTip($btnX, (TP '关掉窗口，什么都不做' 'Close without doing anything'))
+
+        # ---- 左上角那行 HOTKEY 是运行时装上去的，不是烘在背景图里的 ----
+        # 【为什么】背景图（art\cyber_bg.png）原来画死了 'HOTKEY // F9'。
+        # 用户一旦在设置里把快捷键改成别的，启动台还在那说 F9 —— 屏幕上的字和真实行为
+        # 不一致，是最容易被当成「这软件坏了」的那类问题。所以背景图不再画这行，
+        # 改由这里按 config.json 现场拼出真快捷键。
+        $hkTxt = 'HOTKEY // --'
+        try {
+            # 【只列"开工"键，不列收工键】这是一个"开工"启动台。要是把收工键
+            # Ctrl+Alt+Q 也印在这儿，用户照着它按下去等开工，结果弹出来的是关机窗 ——
+            # 这种"显示的字和按下去的结果对不上"正是要避免的。
+            $hkArr = @()
+            foreach ($hkD in @(Get-HotKeyDefs)) {
+                if ([string]$hkD.Kind -eq 'launch') { $hkArr += [string]$hkD.Text }
+            }
+            if ($hkArr.Count -eq 0) { $hkArr = @(Get-PlainHotKeyList (Get-HotKeyDefs)) }
+            if ($hkArr.Count -gt 0) {
+                $hkTxt = 'HOTKEY // ' + (($hkArr | ForEach-Object { ([string]$_).ToUpper() }) -join '  ')
+            }
+        } catch { }
+        $lblHk = New-Object System.Windows.Forms.Label
+        $lblHk.Text      = $hkTxt
+        $lblHk.Font      = New-Object System.Drawing.Font('Consolas', 8)
+        $lblHk.ForeColor = $cDim
+        $lblHk.BackColor = [System.Drawing.Color]::Transparent
+        $lblHk.AutoSize  = $false   # 不写这句 Size 是白设的：Label 默认自己撑大，超出父窗就被裁掉
+        $lblHk.Location  = New-Object System.Drawing.Point(36, 65)
+        $lblHk.Size      = New-Object System.Drawing.Size(250, 15)
+        $f.Controls.Add($lblHk)
+
+        # ---- 底部一行小字「设置」：设置界面的入口 ----
+        # 刻意做得小、做得暗：主按钮仍然只有中间那个圆环一个。
+        # 但它有中文名字、就摆在屏幕上、鼠标停上去会亮 —— 所以不会像原来那样"谁也找不到"。
+        $lblSet = New-Object System.Windows.Forms.Label
+        $lblSet.Text      = (TP '设置' 'Settings')
+        $lblSet.Font      = New-Object System.Drawing.Font('Microsoft YaHei UI', 9)
+        $lblSet.ForeColor = $cSetIdle
+        $lblSet.BackColor = [System.Drawing.Color]::Transparent
+        $lblSet.TextAlign = 'MiddleCenter'
+        $lblSet.AutoSize  = $false
+        $lblSet.Location  = New-Object System.Drawing.Point(170, 452)
+        $lblSet.Size      = New-Object System.Drawing.Size(100, 22)
+        $lblSet.Cursor    = [System.Windows.Forms.Cursors]::Hand
+        $f.Controls.Add($lblSet)
+        $lblSet.Add_MouseEnter({ $this.ForeColor = $script:HUi.Neon })
+        $lblSet.Add_MouseLeave({ $this.ForeColor = $script:HUi.SetIdle })
+        $lblSet.Add_Click({ $script:HubChoice = 'settings' })
+        $ttHub.SetToolTip($lblSet, (TP '打开设置：改清单、皮肤、快捷键、收工倒计时' 'Settings: apps, skin, hotkeys, timer'))
+
         # ---- 圆环下面一行状态：今天要开几项（真实数字，不是装饰）----
         $nItems = 0
         try {
@@ -2831,7 +2889,7 @@ function Show-HubUi {
 
         # 控件袋：事件回调里只有 $script: 看得见，所以引用全塞进一个哈希表
         $script:HUi = @{ Form = $f; Pic = $pic; Idle = $imgIdle; Hit = $imgHit
-                         Neon = $cNeon; Hot = $cNeonHot; Dim = $cDim }
+                         Neon = $cNeon; Hot = $cNeonHot; Dim = $cDim; SetIdle = $cSetIdle }
 
         # Esc = 关掉（什么都不做）；点右上角 ✕ 同理
         $f.Add_KeyDown({
@@ -3433,12 +3491,18 @@ if ($Check) {
     $hasHubGate = ($srcChk -match '\[switch\]\$Hub\b')
     $hasHubCall = ($srcChk -match '\[string\]\(Show-HubUi\)')
     $hasHubGo   = ($srcChk -match "pick\s*-eq\s*'launch'")
-    if ($hasHubFn -and $hasHubGate -and $hasHubCall -and $hasHubGo) {
-        Write-Log '「F9开工」启动台接线检查: OK（窗口 / 分派 / 调用 / 开工分支 四处都在）'
+    # 设置入口（2026-09-25 下午加）。用户当时的原话就是「设置界面去哪里了」——
+    # 这条线一断，用户又是找不到设置，而且**不报错**。所以它跟开工分支一样要断言。
+    $hasHubSet  = ($srcChk -match "pick\s*-eq\s*'settings'")
+    $hasSetBtn  = ($srcChk -match "HubChoice = 'settings'")
+    $hasActRun  = ($srcChk -match "actHub\s*-eq\s*'run'")
+    if ($hasHubFn -and $hasHubGate -and $hasHubCall -and $hasHubGo -and $hasHubSet -and $hasSetBtn -and $hasActRun) {
+        Write-Log '「F9开工」启动台接线检查: OK（窗口 / 分派 / 调用 / 开工分支 / 设置入口 / 图标动作 六处都在）'
     } else {
         Write-Log ('「F9开工」启动台接线检查: 失败! 窗口=' + $hasHubFn + ' 分派=' + $hasHubGate +
                    ' 调用=' + $hasHubCall + ' 开工分支=' + $hasHubGo +
-                   ' —— 双击桌面图标会没反应，快去修')
+                   ' 设置入口=' + $hasHubSet + ' 设置按钮=' + $hasSetBtn + ' 图标动作=' + $hasActRun +
+                   ' —— 双击桌面图标会没反应 / 找不到设置，快去修')
     }
 
     # ---- 一键收工（2026-09-25 加）----
@@ -3721,10 +3785,10 @@ if ($Shutdown) {
     exit 0
 }
 
-# ================== 桌面「F9」图标：开工 / 收工二合一 ==================
-# 桌面上的「F9」图标双击就跑这个。它只是把用户的选择转给上面那两条路：
-#   点「开工」-> 和 -Run 一模一样（进度窗、去重、彩蛋，全都有）
-#   点「收工」-> 和 -Shutdown 一模一样（选动作、倒计时、能取消）
+# ================== 桌面「F9开工」图标：启动台 ==================
+# 桌面上的「F9开工」图标双击就跑这个。窗口里只有两处能点：
+#   点中间的大圆环 -> 和 -Run 一模一样（进度窗、去重、彩蛋，全都有）
+#   点底部的小字「设置」-> 打开设置界面（跟 -Main 是同一个窗口）
 # 后台在不在跑都无所谓：这条路上窗口是本进程自己弹的。
 if ($HubShot) {
     $script:LogTag  = '[F9出图] '
@@ -3738,6 +3802,24 @@ if ($HubShot) {
 if ($Hub) {
     $script:LogTag  = '[F9] '
     $script:TipLang = Get-LauncherLang
+
+    # 【2026-09-25 加】桌面图标也认 config.json 里的 iconAction 了。
+    # 原来这个开关只有 -Main 那条路认，而桌面图标早就改走 -Hub 了 —— 结果就是
+    # 设置面板上那个「双击桌面图标」成了假开关：改了半天什么也不发生。
+    #   run  = 双击图标直接开工，跳过启动台（适合不想多点一下的人）
+    #   其它 = 弹出启动台（默认，就是现在的样子）
+    $cfgHubIdx = Get-LauncherConfig
+    $actHub = 'panel'
+    try { $actHub = [string](Get-ConfigText $cfgHubIdx 'iconAction' 'panel') } catch { $actHub = 'panel' }
+    if ($actHub -eq 'run') {
+        Write-Log '桌面图标（配置 iconAction=run）：直接开工，不出启动台'
+        $tipHubR = Test-ConfigSwitch -Cfg $cfgHubIdx -Key 'showTipAfterRun' -Default $true
+        if ($NoTip) { $tipHubR = $false }
+        Invoke-Launch -ShowTip:$tipHubR -Cfg $cfgHubIdx
+        Ensure-Daemon | Out-Null
+        exit 0
+    }
+
     Write-Log '「F9」主界面（桌面图标 / 命令行）'
     $pick = [string](Show-HubUi)
     if ([string]::IsNullOrEmpty($pick)) {
@@ -3756,6 +3838,31 @@ if ($Hub) {
         # 顺手确认后台还活着（几毫秒）。后台掉了快捷键就是死的，用户只会觉得"坏了"。
         Ensure-Daemon | Out-Null
     }
+    # 底部那行小字「设置」：打开设置界面。
+    # 【为什么要先把启动台自己关掉再开设置】这个窗口是 TopMost（要压在所有东西上面才看得清），
+    # 不关掉它，设置窗会被它压在底下 —— 用户看到的现象就是「点了没反应」。
+    # Show-HubUi 走到这里已经返回、窗口已经没了，所以顺序天然是对的。
+    if ($pick -eq 'settings') {
+        $guiHub = Join-Path $ScriptDir 'Settings-GUI.ps1'
+        if (Test-Path -LiteralPath $guiHub) {
+            try {
+                # 开设置之前先把后台确认活过来：面板上会显示「后台正在待命」，
+                # 用户一看就知道快捷键是好的（跟 -Main 那条路同一个道理）。
+                Ensure-Daemon | Out-Null
+                $psExeHub = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+                if (-not (Test-Path -LiteralPath $psExeHub)) { $psExeHub = 'powershell.exe' }
+                Start-Process -FilePath $psExeHub -ArgumentList @(
+                    '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', $guiHub
+                ) -WindowStyle Hidden
+                Write-Log '  已打开设置界面'
+            } catch {
+                Write-Log ('  打开设置界面失败: ' + $_.Exception.Message)
+            }
+        } else {
+            Write-Log ('  找不到 Settings-GUI.ps1: ' + $guiHub)
+        }
+    }
+
     # 界面上没有「收工」了（用户要求"只留一键开工这一个功能"），桌面图标也合并成了一个。
     # 收工仍然可用：按 Ctrl+Alt+Q（后台注册的全局热键，跟桌面图标无关）。
     exit 0

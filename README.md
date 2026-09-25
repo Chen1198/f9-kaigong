@@ -260,7 +260,7 @@ workday-launcher/
   "soundPath": "",                // 或放一段音频（优先级更高）
   "voiceVolume": 80,
   "lang": "zh",                   // zh / en
-  "iconAction": "panel",          // (旧配置项，桌面图标现在固定打开启动台，留着只是为了兼容)
+  "iconAction": "panel",          // 双击桌面图标干什么：panel=弹出启动台(点中间圆环才开工) / run=跳过启动台，一步直接开工
   "apps": [
     { "name": "微信", "path": "C:\\Program Files\\Tencent\\Weixin\\Weixin.exe" }
   ],
