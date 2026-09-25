@@ -1,0 +1,18 @@
+# 这个仓库的换行符是【故意不统一】的，别让 git 自动转换。
+# 规矩（改了文件名会踩坑，所以写下来）：
+#   .ps1 / .bat / README.txt  -> UTF-8 **带 BOM** + CRLF（PowerShell 5.1 没有 BOM 会把中文当 ANSI 读，全乱码）
+#   .json / .md / .gitignore  -> **不带 BOM** + LF
+# 用 `* -text` 关掉所有自动转换，保证 clone 下来的字节和这里一模一样。
+* -text
+
+*.ps1        text eol=crlf
+*.bat        text eol=crlf
+*.vbs        text eol=crlf
+README.txt   text eol=crlf
+
+*.md         text eol=lf
+*.json       text eol=lf
+.gitignore   text eol=lf
+
+*.ico        binary
+*.png        binary

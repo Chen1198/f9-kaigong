@@ -1,0 +1,116 @@
+{
+  "_说明": "皮肤配色文件。skin 里填皮肤名字（见下方 skins 列表），想换皮肤就改这一行，保存后重开界面即生效。",
+  "skin": "minimal",
+
+  "skins": {
+
+    "minimal": {
+      "_说明": "简约白：大面积留白 + 墨黑强调，最克制、最耐看",
+      "label": "简约白",
+      "labelEn": "Minimal",
+      "art": "ring",
+
+      "bg":         "#F7F7F8",
+      "panel":      "#FFFFFF",
+      "card":       "#FFFFFF",
+      "border":     "#E6E6E8",
+      "headerBg":   "#FFFFFF",
+      "headerText": "#141416",
+      "subText":    "#9B9B9F",
+      "text":       "#1C1C1E",
+      "accent":     "#16181C",
+      "accentDark": "#000000",
+      "accentText": "#FFFFFF",
+      "ok":         "#2E7A54",
+      "warn":       "#A96A1B",
+      "listBg":     "#FFFFFF",
+      "listText":   "#1C1C1E",
+      "listGrid":   "#F0F0F2",
+      "listSelBg":  "#ECECEE",
+      "listSelText":"#111113",
+      "titleText":  "#111113"
+    },
+
+    "ink": {
+      "_说明": "墨玉黑：深色底 + 香槟金，安静、有质感",
+      "label": "墨玉黑",
+      "labelEn": "Ink",
+      "art": "moon",
+
+      "bg":         "#15171B",
+      "panel":      "#1C1F24",
+      "card":       "#21252B",
+      "border":     "#32373F",
+      "headerBg":   "#191C21",
+      "headerText": "#ECEEF1",
+      "subText":    "#8A929D",
+      "text":       "#DDE1E6",
+      "accent":     "#C2A05A",
+      "accentDark": "#9E7F3D",
+      "accentText": "#16181C",
+      "ok":         "#4EBE8A",
+      "warn":       "#DFA55C",
+      "listBg":     "#1C1F24",
+      "listText":   "#DDE1E6",
+      "listGrid":   "#2A2F36",
+      "listSelBg":  "#343A44",
+      "listSelText":"#F3F5F8",
+      "titleText":  "#E4CE93"
+    },
+
+    "morandi": {
+      "_说明": "莫兰迪：低饱和灰调 + 陶土棕，温和不刺眼",
+      "label": "莫兰迪",
+      "labelEn": "Morandi",
+      "art": "arch",
+
+      "bg":         "#F1EFEA",
+      "panel":      "#FAF8F5",
+      "card":       "#FCFBF8",
+      "border":     "#DCD7CE",
+      "headerBg":   "#F6F3EE",
+      "headerText": "#443F39",
+      "subText":    "#948D85",
+      "text":       "#3B3733",
+      "accent":     "#9C8573",
+      "accentDark": "#806957",
+      "accentText": "#FFFFFF",
+      "ok":         "#748E7B",
+      "warn":       "#BC8552",
+      "listBg":     "#FCFBF8",
+      "listText":   "#3B3733",
+      "listGrid":   "#EDE8E0",
+      "listSelBg":  "#E6DFD5",
+      "listSelText":"#4B423A",
+      "titleText":  "#7A6555"
+    },
+
+    "indigo": {
+      "_说明": "深海靛：干净的白底 + 靛蓝，偏商务、偏正式",
+      "label": "深海靛",
+      "labelEn": "Indigo",
+      "art": "wave",
+
+      "bg":         "#F4F6FB",
+      "panel":      "#FFFFFF",
+      "card":       "#FFFFFF",
+      "border":     "#DBE1F0",
+      "headerBg":   "#FFFFFF",
+      "headerText": "#1A2456",
+      "subText":    "#767F9C",
+      "text":       "#222A46",
+      "accent":     "#4457C4",
+      "accentDark": "#33449E",
+      "accentText": "#FFFFFF",
+      "ok":         "#2B8462",
+      "warn":       "#BC6E39",
+      "listBg":     "#FFFFFF",
+      "listText":   "#222A46",
+      "listGrid":   "#E7EBF6",
+      "listSelBg":  "#DFE6F9",
+      "listSelText":"#1F2B66",
+      "titleText":  "#33449E"
+    }
+
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "_说明": "这是配置文件模板。安装后程序会自动生成 config.json，建议用界面改，手改容易出错。",
+  "_说明_用法": "把本文件复制成 config.json 再改（config.json 不会被提交到 git）。",
+
+  "_说明_hotkeys": "按一下就能开工。可以填两个，中间用 / 分开（例如 F9 / Ctrl+Alt+W），两个都能用。单独一个 F9 容易被别的软件抢走。",
+  "hotkeys": ["F9", "Ctrl+Alt+W"],
+
+  "_说明_shutdownHotkey": "收工快捷键：按一下弹出「关机 / 重启 / 睡眠」的窗口，带倒计时、随时能取消。留空字符串 = 关掉收工功能（想用默认的 Ctrl+Alt+Q 就把这一行删掉，别写空）",
+  "shutdownHotkey": "Ctrl+Alt+Q",
+
+
+  "_说明_shutdownSeconds": "收工倒计时秒数（5-600）：点了「关机 / 重启 / 睡眠」之后等这么多秒才真的执行，这段时间里点【取消】或按 Esc 就能马上停下",
+  "shutdownSeconds": 60,
+
+  "_说明_shutdownActions": "收工窗口里显示哪几个按钮，从 shutdown(关机) / restart(重启) / sleep(睡眠) 里挑。默认三个都显示",
+  "shutdownActions": ["shutdown", "restart", "sleep"],
+
+
+  "_说明_delay": "每开完一个，等这么多毫秒再开下一个（只在「开下一个之前」等，第一个是立刻打开的，最后一个也不会白等）。这个数直接乘进总时长：N 个软件有 N-1 个间隔。设 0 = 一口气全点出去。",
+  "delayAfterAppMs": 150,
+  "delayAfterUrlMs": 120,
+
+  "_说明_skipIfRunning": "true = 同一个东西不重复打开：软件已经在运行就跳过（不开第二个），清单里填重了也只开一次。改成 false 就会每次都硬开一遍",
+  "skipIfRunning": true,
+
+  "_说明_activateIfRunning": "true = 软件已经在运行时，不再开第二个，而是把它已经开着的窗口叫到最前面（这样按了快捷键屏幕上一定有反应）。改成 false 就只跳过、不叫窗口",
+  "activateIfRunning": true,
+
+  "_说明_showTipAfterRun": "false = 开工时不显示右下角那个进度窗，只在后台默默干活（进度窗会一直流动到全部开完，然后自己收起）",
+  "showTipAfterRun": true,
+
+  "_说明_showHeartOnRun": "true = 开工时屏幕上飘一下表情包（默认 false，不打扰）",
+  "showHeartOnRun": false,
+
+  "_说明_stickerPath": "自定义表情包图片（png/jpg/bmp/gif）。留空 = 用当前皮肤的形象图",
+  "stickerPath": "",
+
+  "_说明_sayText": "开工时让系统语音念这句话（不用装任何软件）。留空 = 不念",
+  "sayText": "",
+
+  "_说明_soundPath": "开工时播放的音频（wav/mp3/wma/m4a）。填了就优先放它，不再念上面那句",
+  "soundPath": "",
+
+  "_说明_voiceVolume": "系统语音的音量 0-100（音频文件走系统音量）",
+  "voiceVolume": 80,
+
+  "_说明_lang": "界面语言：zh=中文 / en=English",
+  "lang": "zh",
+
+  "_说明_iconAction": "双击桌面「F9开工」图标时：panel=打开控制面板 / run=直接开工",
+  "iconAction": "panel",
+
+  "apps": [
+    { "name": "记事本", "path": "C:\\Windows\\notepad.exe" },
+    { "name": "计算器", "path": "C:\\Windows\\System32\\calc.exe" }
+  ],
+
+  "urls": [
+    { "name": "百度", "url": "https://www.baidu.com" },
+    { "name": "公司邮箱", "url": "https://mail.example.com" }
+  ],
+
+  "browsers": {
+    "edge": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"
+  }
+}
