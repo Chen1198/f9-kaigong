@@ -15,7 +15,10 @@ charset = utf-8-bom
 end_of_line = crlf
 
 [*.{bat,cmd}]
-charset = utf-8-bom
+# 注意：.bat **不要**加 BOM。BOM 的容忍度看 Windows 版本和启动方式，
+# 而不带 BOM + 第二行 `chcp 65001` 是所有 Windows 都通的写法 ——
+# 中文能不能显示由 chcp 决定，跟 BOM 一点关系都没有。
+charset = utf-8
 end_of_line = crlf
 
 [*.{txt,vbs}]
