@@ -442,6 +442,10 @@ function New-DictEn {
     $d['在桌面放一个「F9收工」图标'] = 'Put a "F9 Finish" icon on the desktop'
     $d['默认 Ctrl+Alt+Q（Q = quit）。按一下会弹出「关机 / 重启 / 睡眠」的窗口，带倒计时可以取消。清空这一格 = 关掉收工功能'] =
           'Default Ctrl+Alt+Q (Q = quit). It pops up a Shut down / Restart / Sleep window with a cancellable countdown. Clear this box to turn the feature off.'
+    $d['点了「关机 / 重启 / 睡眠」之后等这么多秒才真的执行；这段时间里点【取消】或按 Esc 就能马上停下'] =
+          'How many seconds to wait after you pick Shut down / Restart / Sleep. You can still click Cancel or press Esc during the countdown.'
+    $d['在桌面上生成一个「F9收工」的图标，双击它就能弹出收工窗口（跟快捷键是同一个功能，后台没在跑也能用）'] =
+          'Put an "F9 Finish" icon on the desktop. Double-click it for the shut-down window (same as the hotkey, and it works even if the background helper is not running).'
     $d['正在生成桌面图标…'] = 'Creating the desktop icon…'
     $d['桌面已经放好「F9收工」图标了，双击就能用（拖到任务栏也行）'] =
           'The "F9 Finish" desktop icon is ready - double-click it (or drag it to the taskbar).'
