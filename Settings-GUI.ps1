@@ -699,6 +699,21 @@ function Read-Bool {
 }
 
 # 从 JSON 对象里安全读一个字符串
+# 界面语言的兜底：config.json 里没有 lang 键时，按系统语言选。
+# 中文系统 -> 中文，其它 -> 英文，跟 Install.ps1 里的判断保持一致。
+function Get-DefaultUiLang {
+    try {
+        $n = ([System.Globalization.CultureInfo]::CurrentUICulture).TwoLetterISOLanguageName
+        if ($n -and $n -ieq 'zh') { return 'zh' }
+        if ($n) { return 'en' }
+    } catch { }
+    try {
+        $r = Get-WinSystemLocale
+        if ($r -and ([string]$r.Name) -like 'zh*') { return 'zh' }
+    } catch { }
+    return 'zh'
+}
+
 function Read-Str {
     param($Obj, [string]$Key, [string]$Default = '')
     if (-not $Obj) { return $Default }
@@ -772,7 +787,7 @@ function Load-Config {
     $script:VoiceVolume = [int](Read-Str $cfg 'voiceVolume' '80')
     if ($script:VoiceVolume -lt 0)   { $script:VoiceVolume = 0 }
     if ($script:VoiceVolume -gt 100) { $script:VoiceVolume = 100 }
-    $lg = Read-Str $cfg 'lang' 'zh'
+    $lg = Read-Str $cfg 'lang' (Get-DefaultUiLang)
     if ($lg -ieq 'en') { $script:Lang = 'en' } else { $script:Lang = 'zh' }
 
     foreach ($a in @($cfg.apps)) {

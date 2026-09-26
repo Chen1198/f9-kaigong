@@ -1,5 +1,6 @@
 {
-  "_说明": "这是配置文件模板。安装后程序会自动生成 config.json，建议用界面改，手改容易出错。",
+  "_说明": "这是配置文件模板。安装后程序会自动生成 config.json（界面语言也一并按系统语言定好，装完就能用），建议用界面改，手改容易出错。",
+  "_note": "Settings template. The installer writes your own config.json for you - prefer the GUI over hand-editing JSON.",
   "_说明_用法": "把本文件复制成 config.json 再改（config.json 不会被提交到 git）。",
 
   "_说明_hotkeys": "按一下就能开工。可以填两个，中间用 / 分开（例如 F9 / Ctrl+Alt+W），两个都能用。单独一个 F9 容易被别的软件抢走。",
@@ -44,7 +45,7 @@
   "_说明_voiceVolume": "系统语音的音量 0-100（音频文件走系统音量）",
   "voiceVolume": 80,
 
-  "_说明_lang": "界面语言：zh=中文 / en=English",
+  "_说明_lang": "界面语言：zh=中文 / en=English (interface language)。安装时按系统语言自动定（中文系统=中文，其它=英文），也能在安装窗口里按 1/2 手选，装完在设置界面里随时改。",
   "lang": "zh",
 
   "_说明_iconAction": "双击桌面「F9开工」图标时：panel=弹出启动台，点中间木鱼才开工（推荐） / run=跳过启动台直接开工",

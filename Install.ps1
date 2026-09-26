@@ -1,5 +1,5 @@
 ﻿# =====================================================================
-#  Workday Launcher  ·  安装
+#  Workday Launcher  ·  安装 / installer
 #  1) 开机后自动在后台待命（在启动文件夹写一个 .vbs，不需要管理员权限）
 #  2) 桌面放**一个**图标：
 #     ·「F9开工」双击弹出启动台（中间一只木鱼），敲一下木鱼就开工。
@@ -7,29 +7,37 @@
 #     ·收工不占图标：按 Ctrl+Alt+Q 弹「关机 / 重启 / 睡眠」窗口（带倒计时，能取消）。
 #       想让收工也有个桌面图标：走设置面板上那个按钮（对应 -WithQuitIcon，见 2g）。
 #  3) 开始菜单放两个：「F9开工」（启动台）/「F9开工·设置」（设置界面）
-#  4) 立刻把后台程序拉起来，不用重启就能按快捷键
+#  4) 准备一份 config.json（首次安装时新建空清单），装完立刻能用
+#  5) 立刻把后台程序拉起来，不用重启就能按快捷键
 #
-#  参数:
+#  参数 / parameters:
 #    -IconsOnly      只重建图标和它们的启动器；不碰开机自启、也不动后台进程。
 #                    设置面板上的按钮走的就是这条路
 #                    （用户可能正开着软件干活，不能被我们重启后台打断）。
 #    -WithQuitIcon   额外在桌面建一个「F9收工」图标。
 #                    **默认不建** —— 用户要求桌面只留一个图标，只有他在设置面板上
 #                    明确点了一下那个按钮，才会带这个参数。
+#    -Lang zh|en     强制界面语言（写进 config.json 的 lang）。不给这个参数时：
+#                      ·已经装过（config.json 在）-> 沿用原来选的语言，不打扰
+#                      ·第一次装                    -> 按系统语言自动选（中文系统=中文，
+#                        其它=英文），并且在窗口里给 10 秒机会手动按 1 / 2 改
+#                    输出文字跟着这个语言走（英文环境下不会看到中文提示）。
 # =====================================================================
 
-param([switch]$IconsOnly, [switch]$WithQuitIcon)
+param([switch]$IconsOnly, [switch]$WithQuitIcon, [string]$Lang = '')
 
 $ErrorActionPreference = 'Continue'
 
 if ($PSScriptRoot) { $ScriptDir = $PSScriptRoot }
 else { $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition }
 
-$main    = Join-Path $ScriptDir 'Start-Workday.ps1'
-$gui     = Join-Path $ScriptDir 'Settings-GUI.ps1'
-$SysRoot = $env:SystemRoot
+$main       = Join-Path $ScriptDir 'Start-Workday.ps1'
+$gui        = Join-Path $ScriptDir 'Settings-GUI.ps1'
+$ConfigPath = Join-Path $ScriptDir 'config.json'
+$utf8       = New-Object System.Text.UTF8Encoding($false)
+$SysRoot    = $env:SystemRoot
 if (-not $SysRoot) { $SysRoot = 'C:\Windows' }
-$psExe   = Join-Path $SysRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+$psExe      = Join-Path $SysRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 if (-not (Test-Path -LiteralPath $psExe)) { $psExe = 'powershell.exe' }
 
 $startup = [Environment]::GetFolderPath('Startup')
@@ -47,6 +55,204 @@ $appVbs     = Join-Path $ScriptDir 'run-app.vbs'
 $quitVbs    = Join-Path $ScriptDir 'run-quit.vbs'
 $hubVbs     = Join-Path $ScriptDir 'run-hub.vbs'
 $ascii      = New-Object System.Text.ASCIIEncoding
+
+# =====================================================================
+#  界面语言：所有输出都走 W（中文 / English 二选一）
+#  跟设置界面里的 T() 是同一套思路 —— 屏幕上说哪种语言，这里就说哪种。
+# =====================================================================
+function W {
+    param([string]$Zh, [string]$En)
+    if ($script:UiLang -eq 'en' -and $En) { Write-Output $En } else { Write-Output $Zh }
+}
+
+# 系统界面语言：中文系统 -> zh，其它 -> en（Win7 上没有 Get-WinSystemLocale，用 try 兜住）
+function Get-SystemLang {
+    try {
+        $n = ([System.Globalization.CultureInfo]::CurrentUICulture).TwoLetterISOLanguageName
+        if ($n -and $n -ieq 'zh') { return 'zh' }
+        if ($n) { return 'en' }
+    } catch { }
+    try {
+        $r = Get-WinSystemLocale
+        if ($r -and ([string]$r.Name) -like 'zh*') { return 'zh' }
+    } catch { }
+    return 'zh'
+}
+
+# 读 config.json 里已经存的 lang（读不到返回空）
+function Get-ConfigLang {
+    param([string]$Path)
+    try {
+        if (-not [System.IO.File]::Exists($Path)) { return '' }
+        $raw = [System.IO.File]::ReadAllText($Path, [System.Text.Encoding]::UTF8)
+        $m = [regex]::Match($raw, '"lang"\s*:\s*"([^"]*)"')
+        if ($m.Success) {
+            $v = $m.Groups[1].Value.Trim().ToLowerInvariant()
+            if ($v -eq 'en') { return 'en' }
+            if ($v -eq 'zh') { return 'zh' }
+        }
+    } catch { }
+    return ''
+}
+
+function Normalize-Lang {
+    param([string]$v)
+    $s = ([string]$v).Trim().ToLowerInvariant()
+    if ($s -like 'en*') { return 'en' }
+    if ($s -like 'zh*' -or $s -eq 'cn' -or $s -eq 'chs' -or $s -eq 'chinese') { return 'zh' }
+    if ($s -eq 'english') { return 'en' }
+    return ''
+}
+
+# ---- 决定这次用哪种语言 ----
+$script:UiLang = ''
+$forced = Normalize-Lang $Lang
+if ($forced) {
+    $script:UiLang = $forced
+} else {
+    $cur = Get-ConfigLang $ConfigPath
+    if ($cur) { $script:UiLang = $cur }
+}
+
+if (-not $script:UiLang) {
+    # 第一次安装：按系统语言自动选，同时给 10 秒机会手动改
+    $auto   = Get-SystemLang
+    $picked = ''
+    $canAsk = $true
+    try {
+        if ([Console]::IsInputRedirected)  { $canAsk = $false }
+        if ([Console]::IsOutputRedirected) { $canAsk = $false }
+    } catch { $canAsk = $false }
+
+    if ($canAsk) {
+        Write-Output ''
+        Write-Output '  Choose the interface language   /   选择界面语言'
+        Write-Output '  --------------------------------------------------------'
+        Write-Output '        [1]   English'
+        Write-Output '        [2]   中文'
+        Write-Output ''
+        if ($auto -eq 'zh') {
+            Write-Output '  Press 1 or 2, then press Enter     ·     按 1 或 2 再按回车'
+            Write-Output '  (no input within 10 s -> 中文 / Chinese)'
+        } else {
+            Write-Output '  Press 1 or 2, then press Enter     ·     按 1 或 2 再按回车'
+            Write-Output '  (no input within 10 s -> English)'
+        }
+        Write-Output ''
+        try {
+            $deadline = (Get-Date).AddSeconds(10)
+            while ((Get-Date) -lt $deadline) {
+                if ($Host.UI.RawUI.KeyAvailable) {
+                    $k = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
+                    $c = [string]$k.Character
+                    if ($c -eq '1') { $picked = 'en'; break }
+                    if ($c -eq '2') { $picked = 'zh'; break }
+                    if ($k.VirtualKeyCode -eq 13 -or $k.VirtualKeyCode -eq 27) { break }
+                }
+                Start-Sleep -Milliseconds 100
+            }
+        } catch { }
+    }
+    if ($picked) { $script:UiLang = $picked } else { $script:UiLang = $auto }
+    Write-Output ''
+}
+
+# ---- 首次安装用的默认配置（空清单，开箱可用）----
+# 占位符 __LANG__ 最后替换成选定语言；注释里留一行英文，非中文用户也能看懂这是什么文件。
+function New-DefaultConfig {
+    param([string]$LangId)
+    $t = @'
+{
+  "_说明": "这个文件由「F9开工 · 设置」自动生成，建议用图形界面改，手改容易出错。",
+  "_note": "Written by the F9 Launcher settings window. Prefer the GUI - hand-editing JSON is easy to get wrong.",
+
+  "_说明_hotkeys": "按一下就能开工。可以填两个，中间用 / 分开（例如 F9 / Ctrl+Alt+W），两个都能用。单独一个 F9 容易被别的软件抢走。",
+  "hotkeys": ["F9", "Ctrl+Alt+W"],
+
+  "_说明_shutdownHotkey": "收工快捷键：按一下弹出「关机 / 重启 / 睡眠」的窗口，带倒计时、随时能取消。留空字符串 = 关掉收工功能",
+  "shutdownHotkey": "Ctrl+Alt+Q",
+
+  "_说明_shutdownSeconds": "收工倒计时秒数（5-600）：点了「关机 / 重启 / 睡眠」之后等这么多秒才真的执行，这段时间里点【取消】或按 Esc 就能马上停下",
+  "shutdownSeconds": 60,
+
+  "_说明_shutdownActions": "收工窗口里显示哪几个按钮，从 shutdown(关机) / restart(重启) / sleep(睡眠) 里挑。默认三个都显示",
+  "shutdownActions": ["shutdown", "restart", "sleep"],
+
+  "_说明_delay": "每开完一个，等这么多毫秒再开下一个。设 0 = 一口气全点出去。",
+  "delayAfterAppMs": 150,
+  "delayAfterUrlMs": 120,
+
+  "_说明_skipIfRunning": "true = 同一个东西不重复打开：软件已经在运行就跳过（不开第二个），清单里填重了也只开一次",
+  "skipIfRunning": true,
+
+  "_说明_activateIfRunning": "true = 软件已经在运行时，不开第二个，而是把它已经开着的窗口叫到最前面",
+  "activateIfRunning": true,
+
+  "_说明_showTipAfterRun": "false = 开工时不显示右下角那个进度窗，只在后台默默干活",
+  "showTipAfterRun": true,
+
+  "_说明_showHeartOnRun": "true = 开工时屏幕上飘一下表情包（默认 false，不打扰）",
+  "showHeartOnRun": false,
+
+  "_说明_stickerPath": "自定义表情包图片（png/jpg/bmp/gif。留空 = 用当前皮肤的形象图）",
+  "stickerPath": "",
+
+  "_说明_sayText": "开工时让系统语音念这句话（不用装任何软件）。留空 = 不念",
+  "sayText": "",
+
+  "_说明_soundPath": "开工时播放的音频文件（wav/mp3/wma/m4a）。填了就优先放它，不再念上面那句",
+  "soundPath": "",
+
+  "_说明_voiceVolume": "语音音量 0-100（音频文件走系统音量，这里只管系统语音）",
+  "voiceVolume": 80,
+
+  "_说明_lang": "界面语言：zh=中文 / en=English (interface language)，只影响界面文字，不影响清单",
+  "lang": "__LANG__",
+
+  "_说明_iconAction": "双击桌面「F9开工」图标时的动作：panel=弹出启动台，点木鱼才开工（推荐）/ run=跳过启动台直接开工",
+  "iconAction": "panel",
+
+  "apps": [],
+
+  "urls": [],
+
+  "browsers": {}
+}
+'@
+    return ($t.Replace('__LANG__', $LangId) + [Environment]::NewLine)
+}
+
+# ---- 0) 准备 config.json ----
+# 【为什么要在这里建】以前装完是没有 config.json 的，用户必须先打开设置点一次
+# 「保存并生效」才生成 —— 直接双击图标开工的话，主程序会报"找不到配置文件"。
+# 现在装完就是一份能用的空清单，语言也定好了。
+# 【已有配置怎么办】只把 "lang" 那一行的值改掉，别的**一个字节都不动**（清单是用户的命）。
+$cfgAction = 'skip'
+if (-not $IconsOnly) {
+    try {
+        if ([System.IO.File]::Exists($ConfigPath)) {
+            $old = Get-ConfigLang $ConfigPath
+            if ($old -eq $script:UiLang) {
+                $cfgAction = 'kept'
+            } else {
+                $raw = [System.IO.File]::ReadAllText($ConfigPath, [System.Text.Encoding]::UTF8)
+                $new = [System.Text.RegularExpressions.Regex]::Replace(
+                           $raw, '"lang"\s*:\s*"[^"]*"', ('"lang": "' + $script:UiLang + '"'), 1)
+                if ($new -ne $raw) {
+                    [System.IO.File]::WriteAllText($ConfigPath, $new, $utf8)
+                    $cfgAction = 'lang'
+                } else {
+                    $cfgAction = 'kept'   # 没找到 lang 键（罕见）：不动它，让用户去界面上改
+                }
+            }
+        } else {
+            [System.IO.File]::WriteAllText($ConfigPath, (New-DefaultConfig $script:UiLang), $utf8)
+            $cfgAction = 'created'
+        }
+    } catch {
+        W ('[WARN] 处理 config.json 失败: ' + $_.Exception.Message) ('[WARN] Could not write config.json: ' + $_.Exception.Message)
+    }
+}
 
 # ---- 桌面图标：跟着当前皮肤走（原来这两行忘了定义，导致装完还是白板图标）----
 $appIco  = Join-Path $ScriptDir 'app.ico'
@@ -72,6 +278,7 @@ try {
 # ⚠️ VBScript 里字符串内部的引号必须写成两个（""）。只写一个会把字符串提前截断，
 #    双击图标就弹「Windows Script Host / 语句未结束 / 800A0401」——这个坑踩过一次，别再改回去。
 #    所以下面统一用 $dq 拼，写盘前还做一次引号配对自检。
+#    (VBScript needs doubled quotes inside strings - single quotes break the script.)
 function New-QuietStarterVbs {
     param([string]$ExePath, [string]$ScriptPath, [string]$ExtraArgs, [string]$Comment1, [string]$Comment2)
     $q  = [char]34
@@ -116,16 +323,16 @@ function Test-VbsSyntax {
 # ---- 1) 开机自启：在启动文件夹里写一个静默启动器（无窗口，不闪黑框） ----
 # -IconsOnly（面板上的"放个收工图标"按钮）只补图标，绝不碰这里。
 if ($IconsOnly) {
-    Write-Output '[INFO] -IconsOnly：只补图标和启动器，不动开机自启'
+    W '[INFO] -IconsOnly：只补图标和启动器，不动开机自启' '[INFO] -IconsOnly: icons and launchers only, auto-start untouched'
 } else {
 try {
     $vbs = New-QuietStarterVbs -ExePath $psExe -ScriptPath $main -ExtraArgs '' `
               -Comment1 'Workday Launcher - keep waiting in background after logon' `
               -Comment2 'Delete this file to disable auto start'
     [System.IO.File]::WriteAllText($startupVbs, $vbs, $ascii)
-    Write-Output ('[OK]   开机后台待命已设置: ' + $startupVbs)
+    W ('[OK]   开机后台待命已设置: ' + $startupVbs) ('[OK]   Auto-start installed: ' + $startupVbs)
 } catch {
-    Write-Output ('[FAIL] 设置开机自启失败: ' + $_.Exception.Message)
+    W ('[FAIL] 设置开机自启失败: ' + $_.Exception.Message) ('[FAIL] Could not set up auto-start: ' + $_.Exception.Message)
 }
 }
 
@@ -141,12 +348,12 @@ try {
     # 写完立刻验语法，过了才算数（不过就退回直接调 powershell，最多闪一下黑框，功能不受影响）
     $appVbsOk = Test-VbsSyntax -Path $appVbs
     if ($appVbsOk) {
-        Write-Output ('[OK]   已生成无黑框启动器: ' + $appVbs + '  （语法校验通过）')
+        W ('[OK]   已生成无黑框启动器: ' + $appVbs + '  （语法校验通过）') ('[OK]   Console-free launcher created: ' + $appVbs + '  (syntax checked)')
     } else {
-        Write-Output '[WARN] run-app.vbs 语法校验没过，桌面图标改用直接调用 powershell（会闪一下黑框）'
+        W '[WARN] run-app.vbs 语法校验没过，桌面图标改用直接调用 powershell（会闪一下黑框）' '[WARN] run-app.vbs failed its syntax check; falling back to calling powershell directly (a console may flash)'
     }
 } catch {
-    Write-Output ('[WARN] 生成 .vbs 启动器失败: ' + $_.Exception.Message)
+    W ('[WARN] 生成 .vbs 启动器失败: ' + $_.Exception.Message) ('[WARN] Could not create the .vbs launcher: ' + $_.Exception.Message)
 }
 
 # ---- 2b) 桌面快捷方式：只放一个「F9开工」，双击 = 白色简约木鱼启动台 ----
@@ -165,12 +372,12 @@ try {
     [System.IO.File]::WriteAllText($hubVbs, $vbs, $ascii)
     $hubVbsOk = Test-VbsSyntax -Path $hubVbs
     if ($hubVbsOk) {
-        Write-Output ('[OK]   已生成启动台启动器: ' + $hubVbs + '  （语法校验通过）')
+        W ('[OK]   已生成启动台启动器: ' + $hubVbs + '  （语法校验通过）') ('[OK]   Launchpad launcher created: ' + $hubVbs + '  (syntax checked)')
     } else {
-        Write-Output '[WARN] run-hub.vbs 语法校验没过，桌面图标改用直接调 powershell（会闪一下黑框）'
+        W '[WARN] run-hub.vbs 语法校验没过，桌面图标改用直接调 powershell（会闪一下黑框）' '[WARN] run-hub.vbs failed its syntax check; falling back to calling powershell directly (a console may flash)'
     }
 } catch {
-    Write-Output ('[WARN] 生成启动台启动器失败: ' + $_.Exception.Message)
+    W ('[WARN] 生成启动台启动器失败: ' + $_.Exception.Message) ('[WARN] Could not create the launchpad launcher: ' + $_.Exception.Message)
 }
 
 $useVbs = $hubVbsOk -and (Test-Path -LiteralPath $wscriptExe)
@@ -186,13 +393,18 @@ try {
     }
     $lnk.WorkingDirectory = $ScriptDir
     $lnk.WindowStyle      = 7
-    $lnk.Description      = 'F9开工：双击弹出启动台，敲一下中间那只木鱼就开工'
+    if ($script:UiLang -eq 'en') {
+        $lnk.Description  = 'F9 Launcher: double-click for the launchpad, tap the wooden fish to start work'
+    } else {
+        $lnk.Description  = 'F9开工：双击弹出启动台，敲一下中间那只木鱼就开工'
+    }
     if (Test-Path -LiteralPath $hubIco) { $lnk.IconLocation = $hubIco + ',0' }
     elseif (Test-Path -LiteralPath $appIco) { $lnk.IconLocation = $appIco + ',0' }
     $lnk.Save()
-    Write-Output ('[OK]   桌面已生成「F9开工」图标（' + $(if ($useVbs) { 'wscript 无黑框模式' } else { 'powershell 兜底模式' }) + '）')
+    W ('[OK]   桌面已生成「F9开工」图标（' + $(if ($useVbs) { 'wscript 无黑框模式' } else { 'powershell 兜底模式' }) + '）') `
+      ('[OK]   Desktop icon "F9开工" created (' + $(if ($useVbs) { 'wscript, no console window' } else { 'powershell fallback' }) + ')')
 } catch {
-    Write-Output ('[WARN] 没能在桌面建快捷方式(不影响快捷键使用): ' + $_.Exception.Message)
+    W ('[WARN] 没能在桌面建快捷方式(不影响快捷键使用): ' + $_.Exception.Message) ('[WARN] Could not create the desktop shortcut (hotkeys still work): ' + $_.Exception.Message)
 }
 
 # ---- 2e) 桌上如果还留着老版本建的「F9收工」图标，挪到程序目录备份 ----
@@ -205,7 +417,7 @@ try {
 # 因为设置面板上那个按钮正是靠 -IconsOnly 去建这个图标的（见 2g）：
 # 不分开的话，用户点一下按钮 → 图标刚建好就被这段挪走 → 按钮永远报"失败"。
 if ($IconsOnly) {
-    Write-Output '[INFO] -IconsOnly：不清理桌面的「F9收工」图标（那是设置面板的按钮在管）'
+    W '[INFO] -IconsOnly：不清理桌面的「F9收工」图标（那是设置面板的按钮在管）' '[INFO] -IconsOnly: leaving the desktop "F9收工" icon alone (the settings button manages it)'
 } else {
 foreach ($oldQ in @('F9收工.lnk')) {
     $opq = Join-Path $desktop $oldQ
@@ -217,13 +429,13 @@ foreach ($oldQ in @('F9收工.lnk')) {
         if ($mineQ) {
             $bakq = Join-Path $ScriptDir ('old-shortcut-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.lnk.bak')
             Move-Item -LiteralPath $opq -Destination $bakq -Force
-            Write-Output ('[OK]   桌面已合并成一个图标，旧的「F9收工」备份到: ' + $bakq)
-            Write-Output '       （收工功能还在，按 Ctrl+Alt+Q 就行）'
+            W ('[OK]   桌面已合并成一个图标，旧的「F9收工」备份到: ' + $bakq) ('[OK]   Old "F9收工" icon moved to a backup file: ' + $bakq)
+            W '       （收工功能还在，按 Ctrl+Alt+Q 就行）' '       (Finish-work still works - just press Ctrl+Alt+Q)'
         } else {
-            Write-Output '[SKIP] 桌面上的 F9收工 不是本程序建的，没动它'
+            W '[SKIP] 桌面上的 F9收工 不是本程序建的，没动它' '[SKIP] Desktop "F9收工" was not created by this app; left untouched'
         }
     } catch {
-        Write-Output ('[WARN] 处理 F9收工 失败: ' + $_.Exception.Message)
+        W ('[WARN] 处理 F9收工 失败: ' + $_.Exception.Message) ('[WARN] Could not handle F9收工: ' + $_.Exception.Message)
     }
 }
 }
@@ -239,12 +451,12 @@ foreach ($old2 in @('F9开工·设置.lnk', 'F9开工 · 设置.lnk')) {
             if ($sk.Arguments -and $sk.Arguments -like ('*' + $gui + '*')) {
                 $bak = Join-Path $ScriptDir ('old-shortcut-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.lnk.bak')
                 Move-Item -LiteralPath $op -Destination $bak -Force
-                Write-Output ('[OK]   桌面已合并成一个图标，旧的设置图标备份到: ' + $bak)
+                W ('[OK]   桌面已合并成一个图标，旧的设置图标备份到: ' + $bak) ('[OK]   Old settings icon on the desktop moved to a backup file: ' + $bak)
             } else {
-                Write-Output ('[SKIP] 桌面上的 ' + $old2 + ' 不是本程序建的，没动它')
+                W ('[SKIP] 桌面上的 ' + $old2 + ' 不是本程序建的，没动它') ('[SKIP] Desktop "' + $old2 + '" was not created by this app; left untouched')
             }
         } catch {
-            Write-Output ('[WARN] 处理 ' + $old2 + ' 失败: ' + $_.Exception.Message)
+            W ('[WARN] 处理 ' + $old2 + ' 失败: ' + $_.Exception.Message) ('[WARN] Could not handle ' + $old2 + ': ' + $_.Exception.Message)
         }
     }
 }
@@ -262,12 +474,12 @@ foreach ($oldMain in @('一键开工.lnk', '一键开工 · 设置.lnk', '一键
         if ($mine) {
             $bak4 = Join-Path $ScriptDir ('old-shortcut-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.lnk.bak')
             Move-Item -LiteralPath $op -Destination $bak4 -Force
-            Write-Output ('[OK]   桌面上的旧名字「' + $oldMain + '」已挪走（备份: ' + $bak4 + '）')
+            W ('[OK]   桌面上的旧名字「' + $oldMain + '」已挪走（备份: ' + $bak4 + '）') ('[OK]   Old desktop shortcut "' + $oldMain + '" moved away (backup: ' + $bak4 + ')')
         } else {
-            Write-Output ('[SKIP] 桌面上的 ' + $oldMain + ' 不是本程序建的，没动它')
+            W ('[SKIP] 桌面上的 ' + $oldMain + ' 不是本程序建的，没动它') ('[SKIP] Desktop "' + $oldMain + '" was not created by this app; left untouched')
         }
     } catch {
-        Write-Output ('[WARN] 处理 ' + $oldMain + ' 失败: ' + $_.Exception.Message)
+        W ('[WARN] 处理 ' + $oldMain + ' 失败: ' + $_.Exception.Message) ('[WARN] Could not handle ' + $oldMain + ': ' + $_.Exception.Message)
     }
 }
 
@@ -287,7 +499,7 @@ if ($WithQuitIcon) {
         [System.IO.File]::WriteAllText($quitVbs, $vbs, $ascii)
         $quitVbsOk = Test-VbsSyntax -Path $quitVbs
     } catch {
-        Write-Output ('[WARN] 生成收工启动器失败: ' + $_.Exception.Message)
+        W ('[WARN] 生成收工启动器失败: ' + $_.Exception.Message) ('[WARN] Could not create the finish-work launcher: ' + $_.Exception.Message)
     }
     $useQuitVbs = $quitVbsOk -and (Test-Path -LiteralPath $wscriptExe)
     try {
@@ -302,13 +514,18 @@ if ($WithQuitIcon) {
         }
         $lq.WorkingDirectory = $ScriptDir
         $lq.WindowStyle      = 7
-        $lq.Description      = 'F9收工：弹出「关机 / 重启 / 睡眠」窗口（带倒计时，随时能取消）'
+        if ($script:UiLang -eq 'en') {
+            $lq.Description  = 'F9 Launcher: finish work - shutdown / restart / sleep, with a cancellable countdown'
+        } else {
+            $lq.Description  = 'F9收工：弹出「关机 / 重启 / 睡眠」窗口（带倒计时，随时能取消）'
+        }
         if (Test-Path -LiteralPath $quitIco) { $lq.IconLocation = $quitIco + ',0' }
         elseif (Test-Path -LiteralPath $appIco) { $lq.IconLocation = $appIco + ',0' }
         $lq.Save()
-        Write-Output ('[OK]   桌面已生成「F9收工」图标（' + $(if ($useQuitVbs) { 'wscript 无黑框模式' } else { 'powershell 兜底模式' }) + '）')
+        W ('[OK]   桌面已生成「F9收工」图标（' + $(if ($useQuitVbs) { 'wscript 无黑框模式' } else { 'powershell 兜底模式' }) + '）') `
+          ('[OK]   Desktop icon "F9收工" created (' + $(if ($useQuitVbs) { 'wscript, no console window' } else { 'powershell fallback' }) + ')')
     } catch {
-        Write-Output ('[FAIL] 没能生成「F9收工」图标: ' + $_.Exception.Message)
+        W ('[FAIL] 没能生成「F9收工」图标: ' + $_.Exception.Message) ('[FAIL] Could not create the "F9收工" icon: ' + $_.Exception.Message)
     }
 }
 
@@ -328,9 +545,11 @@ if (-not $startMenu) {
 }
 foreach ($sm in @(
     @{ Name = 'F9开工';      Kind = 'hub'; Ico = $hubIco;
-       Desc = 'F9开工：弹出启动台，敲一下中间那只木鱼就开工' },
+       Desc = 'F9开工：弹出启动台，敲一下中间那只木鱼就开工';
+       DescEn = 'F9 Launcher: open the launchpad, tap the wooden fish to start work' },
     @{ Name = 'F9开工·设置'; Kind = 'gui'; Ico = $setIco;
-       Desc = 'F9开工 · 设置：改清单 / 皮肤 / 快捷键 / 收工倒计时' }
+       Desc = 'F9开工 · 设置：改清单 / 皮肤 / 快捷键 / 收工倒计时';
+       DescEn = 'F9 Launcher settings: list, skin, hotkeys, finish-work countdown' }
 )) {
     try {
         if (-not (Test-Path -LiteralPath $startMenu)) { continue }
@@ -351,19 +570,19 @@ foreach ($sm in @(
         }
         $ls.WorkingDirectory = $ScriptDir
         $ls.WindowStyle      = 7
-        $ls.Description      = $sm.Desc
+        if ($script:UiLang -eq 'en') { $ls.Description = $sm.DescEn } else { $ls.Description = $sm.Desc }
         if (Test-Path -LiteralPath $sm.Ico) { $ls.IconLocation = $sm.Ico + ',0' }
         $ls.Save()
-        Write-Output ('[OK]   开始菜单已生成「' + $sm.Name + '」')
+        W ('[OK]   开始菜单已生成「' + $sm.Name + '」') ('[OK]   Start menu entry created: "' + $sm.Name + '"')
     } catch {
-        Write-Output ('[WARN] 生成开始菜单「' + $sm.Name + '」失败: ' + $_.Exception.Message)
+        W ('[WARN] 生成开始菜单「' + $sm.Name + '」失败: ' + $_.Exception.Message) ('[WARN] Could not create start menu entry "' + $sm.Name + '": ' + $_.Exception.Message)
     }
 }
 
 # ---- 3) 立刻把后台进程拉起来（顺便处理"程序更新了但后台还是旧代码"的情况）----
 # -IconsOnly 时整段跳过：那是面板按钮叫起来的，用户手上多半正开着东西在干活。
 if ($IconsOnly) {
-    Write-Output '[INFO] -IconsOnly：不动后台进程（桌面上那个「F9开工」图标现在就能用）'
+    W '[INFO] -IconsOnly：不动后台进程（桌面上那个「F9开工」图标现在就能用）' '[INFO] -IconsOnly: background process untouched (the desktop icon already works)'
 } else {
 try {
     $mainTime = (Get-Item -LiteralPath $main).LastWriteTime
@@ -382,7 +601,7 @@ try {
             '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', $main
         ) -WindowStyle Hidden
         Start-Sleep -Seconds 4
-        Write-Output '[OK]   后台程序已启动'
+        W '[OK]   后台程序已启动' '[OK]   Background watcher started'
     } elseif ($stale.Count -gt 0) {
         # 后台是改代码之前拉起来的，里面的还是旧版本，重启一下
         foreach ($e in $stale) {
@@ -393,20 +612,43 @@ try {
             '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', $main
         ) -WindowStyle Hidden
         Start-Sleep -Seconds 4
-        Write-Output '[OK]   检测到程序更新过，后台已重启（用上最新版本了）'
+        W '[OK]   检测到程序更新过，后台已重启（用上最新版本了）' '[OK]   Program files were newer than the running watcher; it has been restarted'
     } else {
-        Write-Output '[OK]   后台程序已经在跑了，无需重复启动'
+        W '[OK]   后台程序已经在跑了，无需重复启动' '[OK]   Background watcher is already running'
     }
-    Write-Output '[INFO] 现在按一下 F9（或 Ctrl+Alt+W）就能F9开工；Ctrl+Alt+Q 是F9收工'
 } catch {
-    Write-Output ('[FAIL] 启动后台程序失败: ' + $_.Exception.Message)
+    W ('[FAIL] 启动后台程序失败: ' + $_.Exception.Message) ('[FAIL] Could not start the background watcher: ' + $_.Exception.Message)
 }
 }
 
+# ---- 4) 配置与语言落位说明 ----
+if ($cfgAction -eq 'created') {
+    W '[OK]   已生成 config.json（空清单，装完即可用）' '[OK]   config.json created (empty list - ready to use right away)'
+} elseif ($cfgAction -eq 'lang') {
+    W '[OK]   界面语言已改成中文（你的清单没动）' '[OK]   Interface language set to English (your list was not touched)'
+} elseif ($cfgAction -eq 'kept') {
+    W '[INFO] 沿用你原来的界面语言设置' '[INFO] Kept your existing interface language'
+}
+
 Write-Output ''
-Write-Output '安装完成。'
-Write-Output '桌面上只留一个「F9开工」：双击弹出启动台，敲一下中间那只木鱼就开工。'
-Write-Output '想改清单 / 皮肤 / 彩蛋：点启动台底部那行小字「设置」，'
-Write-Output '                       或者开始菜单里的「F9开工·设置」（是同一个窗口）。'
-Write-Output '收工：按 Ctrl+Alt+Q = 关机 / 重启 / 睡眠（带倒计时，随时能取消）。'
-Write-Output ('有疑问就双击 check.bat 自检。程序位置: ' + $ScriptDir)
+if ($script:UiLang -eq 'en') {
+    Write-Output 'Installation complete.'
+    Write-Output 'One icon on the desktop, "F9开工": double-click it for the launchpad,'
+    Write-Output 'then tap the wooden fish in the middle to start your workday.'
+    Write-Output 'To change your list / skin / language: click the small "Settings" link at the'
+    Write-Output 'bottom of the launchpad, or pick the settings entry in the Start menu'
+    Write-Output '(it is named "F9开工·设置" - same app, same icons).'
+    Write-Output 'To finish work: press Ctrl+Alt+Q = shutdown / restart / sleep (countdown, cancellable).'
+    Write-Output ''
+    Write-Output ('Interface language: English   (change it in Settings -> Language)')
+    Write-Output ('Program folder: ' + $ScriptDir)
+} else {
+    Write-Output '安装完成。'
+    Write-Output '桌面上只留一个「F9开工」：双击弹出启动台，敲一下中间那只木鱼就开工。'
+    Write-Output '想改清单 / 皮肤 / 彩蛋：点启动台底部那行小字「设置」，'
+    Write-Output '                       或者开始菜单里的「F9开工·设置」（是同一个窗口）。'
+    Write-Output '收工：按 Ctrl+Alt+Q = 关机 / 重启 / 睡眠（带倒计时，随时能取消）。'
+    Write-Output ''
+    Write-Output ('界面语言：简体中文     （想改英文：设置 → 界面语言 / Language）')
+    Write-Output ('有疑问就双击 check.bat 自检。程序位置: ' + $ScriptDir)
+}

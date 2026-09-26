@@ -2087,6 +2087,14 @@ function Ensure-Daemon {
 # 不然第一次按键要现场加载 WinForms、造窗口造字体，加起来能拖到一秒多 ——
 # 用户会觉得"第一次按特别慢"。
 function Warm-UpDaemon {
+    # 【2026-09-26 加】预热期间把优先级降到"低于正常"。后台是开机自启的，预热这 3~4 秒
+    # 正好撞在系统还在加载其它启动项的时候（这台是 2012 年的双核），降一档不跟别人抢 CPU。
+    # 用户感觉不到慢（反正他还没按键），但开机那几秒会顺一些。函数末尾调回来。
+    $warmProc = $null
+    try {
+        $warmProc = [System.Diagnostics.Process]::GetCurrentProcess()
+        $warmProc.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::BelowNormal
+    } catch { $warmProc = $null }
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     [void](Initialize-HotKeyHost)
 
@@ -2172,6 +2180,12 @@ function Warm-UpDaemon {
     # 它不在"开机后第一次按"的热路径上（没人一开机就关机），
     # 但顺手预热了，第一次按收工键就不用等这一下。
     try { Show-ShutdownUi -Warm } catch { }
+    # 【2026-09-26 加】「F9」启动台（木鱼窗）也先造一遍。
+    # 它以前是唯一没被预热的窗口 —— 开机后第一次弹它要多花一百多毫秒（现载三张图）。
+    try { Show-HubUi -Warm } catch { }
+    # 优先级调回来：预热可以慢慢来，但真开工那一下必须是正常优先级，
+    # 不然第一个软件会慢半拍（这台机器上挺明显）。
+    try { if ($warmProc) { $warmProc.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::Normal } } catch { }
     $sw.Stop()
     Write-Log ('预热完成，用时 ' + [int]$sw.Elapsed.TotalMilliseconds + ' ms（右下角进度窗: ' +
                $(if ($hintOk) { '好了' } else { '没做出来，不影响开工' }) + '）')
@@ -2468,9 +2482,12 @@ function Show-ShutdownUi {
         $bW    = 120
         $bGap  = 10
         $made  = @{}
+        $qi    = 0
         foreach ($a in $acts) {
             $b = New-Object System.Windows.Forms.Button
-            $b.Text      = (Get-QuitActionLabel $a)
+            # 前面标个序号：跟下面 1 / 2 / 3 快捷键对上（键盘也能直接选）
+            $qi = $qi + 1
+            $b.Text      = [string]$qi + '  ' + (Get-QuitActionLabel $a)
             $b.Location  = New-Object System.Drawing.Point($bx, 40)
             $b.Size      = New-Object System.Drawing.Size($bW, 48)
             $b.Font      = $fontTitle
@@ -2581,8 +2598,23 @@ function Show-ShutdownUi {
 
         # Esc = 取消。只有窗口拿到了键盘焦点才收得到，所以下面 Show 之后要努力把它
         # 叫到最前面（后台上来的窗口默认不会到前面，这是 Windows 的前台锁）。
+        # 【2026-09-26 加】1 / 2 / 3 = 直接选上面第几个按钮（按钮上已经标了序号）。
+        # 以前这三个只能拿鼠标点，键盘只认 Esc —— 跟启动台那边"能用键盘"不一致。
+        # 动作清单要塞进 $script:：回调是另一个作用域，看不见外面的 $acts。
+        $script:QuitActList = @($acts)
         $f.Add_KeyDown({
-            if ($_.KeyCode -eq [System.Windows.Forms.Keys]::Escape) { Stop-QuitCountdown }
+            $k = $_.KeyCode
+            if ($k -eq [System.Windows.Forms.Keys]::Escape) { Stop-QuitCountdown; return }
+            # 已经在倒数了就不认数字键（那会儿只该按 Esc 反悔）
+            if ($script:QuitState -ne 'pick') { return }
+            $n = 0
+            if ($k -eq [System.Windows.Forms.Keys]::D1 -or $k -eq [System.Windows.Forms.Keys]::NumPad1) { $n = 1 }
+            elseif ($k -eq [System.Windows.Forms.Keys]::D2 -or $k -eq [System.Windows.Forms.Keys]::NumPad2) { $n = 2 }
+            elseif ($k -eq [System.Windows.Forms.Keys]::D3 -or $k -eq [System.Windows.Forms.Keys]::NumPad3) { $n = 3 }
+            if ($n -ge 1) {
+                $lst = @($script:QuitActList)
+                if ($n -le $lst.Count) { Start-QuitCountdown ([string]$lst[$n - 1]) }
+            }
         })
         # 直接点右上角的 X 也当取消。只在"还没走完"的时候清空动作，
         # 不然倒数数到 0 之后我们自己去 Close 它，会被这里把动作又抹掉。
@@ -2726,7 +2758,11 @@ function Show-ShutdownUi {
 # 返回 'launch'（敲了木鱼）/ 'settings'（点了设置）/ 'close'（关掉了）/ ''（窗口没起来）。
 function Show-HubUi {
     # -ShotDir  离屏渲染预览图然后退出（出图用，用户屏幕上什么都看不到）
-    param([string]$ShotDir = '')
+    # -Warm     预热用：窗体和三张木鱼图都造/载一遍，然后立刻拆掉，用户什么都看不到。
+    #           跟 Show-ShutdownUi 的 -Warm 是同一套做法（那个已经用了很久）。
+    #           【为什么需要】这块窗以前没被预热 —— 开机后第一次弹它，要现载
+    #           三张 320×320 的图（实测 89 毫秒）+ 现建窗体，比之后每次多花一百多毫秒。
+    param([string]$ShotDir = '', [switch]$Warm)
 
     if ($script:HubBusy) {
         Write-Log '「F9」主界面还开着，这次的调用忽略'
@@ -2900,8 +2936,16 @@ function Show-HubUi {
                          Neon = $cNeon; Hot = $cNeonHot; Dim = $cDim; SetIdle = $cSetIdle }
 
         # Esc = 关掉（什么都不做）；点右上角 ✕ 同理
+        # 【2026-09-26 加】回车 / 空格 = 敲木鱼（开工）。以前键盘只认 Esc ——
+        # 想快点开工反而必须先去找鼠标、移到木鱼上、再点一下，跟"方便快捷"正好相反。
+        # KeyPreview 已经在上面设成 $true，所以这里收得到。
         $f.Add_KeyDown({
-            if ($_.KeyCode -eq [System.Windows.Forms.Keys]::Escape) { $script:HubChoice = 'close' }
+            $k = $_.KeyCode
+            if ($k -eq [System.Windows.Forms.Keys]::Escape) {
+                $script:HubChoice = 'close'
+            } elseif ($k -eq [System.Windows.Forms.Keys]::Enter -or $k -eq [System.Windows.Forms.Keys]::Space) {
+                $script:HubChoice = 'launch'
+            }
         })
         $f.Add_FormClosing({
             if ([string]::IsNullOrEmpty($script:HubChoice)) { $script:HubChoice = 'close' }
@@ -2923,6 +2967,16 @@ function Show-HubUi {
             Write-Log ('[警告] 「F9」主界面有 ' + $fitWarn.Count + ' 处文字会被切掉: ' + ($fitWarn -join '；'))
         } else {
             Write-Log '「F9」主界面文字排版检查: OK'
+        }
+
+        # ---- 预热：只走到"窗体、三张图、排版体检都过了一遍"就拆掉 ----
+        # 走的是和真弹窗完全相同的代码路径（少了这一句，预热就是白热 ——
+        # 热的必须是真正要用的那段代码）。
+        if ($Warm) {
+            try { $f.Dispose() } catch { }
+            $f = $null
+            $script:HUi = $null
+            return ''
         }
 
         # ---- 离屏出图：把窗口挪到屏幕外再 Show，用户完全看不到 ----
@@ -2986,9 +3040,20 @@ function Show-HubUi {
         }
 
         # ---- 等用户点 ----
+        # 【2026-09-26 加】没人管就自己收起。这块窗体是 TopMost + 无边框，会一直贴在
+        # 屏幕最上面；按了快捷键又临时不想开工时，以前必须专门去点右上角那个 ✕ 才能让它走。
+        # 到点等同于点了 ✕：什么都不做。
+        # 【为什么用 TickCount 而不是 Get-Date】20 毫秒轮一次，读 TickCount 就是读一个
+        # 计数器（纳秒级），Get-Date 要造一个完整的 DateTime（这台老机器上差两个数量级）。
+        $hubAutoSec  = 30
+        $hubStartMs  = [long][System.Environment]::TickCount
         while ([string]::IsNullOrEmpty($script:HubChoice)) {
             try { [System.Windows.Forms.Application]::DoEvents() } catch { }
             Start-Sleep -Milliseconds 20
+            if ($hubAutoSec -gt 0 -and (([long][System.Environment]::TickCount - $hubStartMs) -gt ($hubAutoSec * 1000))) {
+                $script:HubChoice = 'close'
+                Write-Log ('「F9」主界面没人操作，' + $hubAutoSec + ' 秒后自己收起（等同于点了 ✕）')
+            }
         }
         $choice = [string]$script:HubChoice
 
@@ -3128,11 +3193,31 @@ function Test-ConfigSwitch {
 }
 
 # 界面语言：config.json 的 lang 字段，zh / en
+#
+# 【没有这个字段时怎么办】以前一律按中文算。现在改成按系统语言来 —— 中文系统给中文，
+# 其它给英文，跟安装脚本 Install.ps1 和设置界面用的是同一套判断（装的时候选的语言会
+# 直接写进 config.json，所以这条兜底只在用户手改过配置、把 lang 键删了时才会走到）。
+#
+# 【为什么要缓存】这条函数在"按下快捷键 -> 弹进度窗"这条路径上会被调用，每次按键都要跑。
+# 探一次系统语言（Get-UICulture）要几十毫秒，每次都探会把这最要紧的一下拖慢，
+# 所以只探第一次，之后直接读缓存。
+$script:SysLangCache = $null
+function Get-SystemLangOnce {
+    if ($script:SysLangCache) { return $script:SysLangCache }
+    $r = 'zh'
+    try {
+        $n = ([System.Globalization.CultureInfo]::CurrentUICulture).TwoLetterISOLanguageName
+        if ($n) { if ($n -ieq 'zh') { $r = 'zh' } else { $r = 'en' } }
+    } catch { }
+    $script:SysLangCache = $r
+    return $r
+}
+
 function Get-LauncherLang {
     $cfg = Get-LauncherConfig
-    if (-not $cfg) { return 'zh' }
+    if (-not $cfg) { return (Get-SystemLangOnce) }
     $p = $cfg.PSObject.Properties['lang']
-    if (-not $p -or $null -eq $p.Value) { return 'zh' }
+    if (-not $p -or $null -eq $p.Value) { return (Get-SystemLangOnce) }
     if (([string]$p.Value).Trim() -ieq 'en') { return 'en' }
     return 'zh'
 }
