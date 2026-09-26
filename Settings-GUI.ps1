@@ -950,9 +950,15 @@ function Save-Skin {
 # 换桌面/开始菜单图标（换皮肤时顺手做）
 function Update-ShortcutIcons {
     param([string]$SkinId)
+    # 【2026-09-26 修】桌面上那个「F9开工」是敲木鱼的启动台，图标必须用 hub.ico（木鱼）。
+    # 原来这里一律用 skin_<id>_app.ico（一张闪电图），所以只要保存一次皮肤，
+    # 桌面上那只木鱼就被盖回闪电 —— 用户看到的现象就是"图标还是旧的"。
+    # 规则与 Install.ps1 的 2c / 2h 段一致：有 hub.ico 就用它，没有才回落到皮肤图标。
     $appIco = Join-Path $ScriptDir ('skin_' + $SkinId + '_app.ico')
     $setIco = Join-Path $ScriptDir ('skin_' + $SkinId + '_setup.ico')
-    if (-not (Test-Path -LiteralPath $appIco)) { $appIco = Join-Path $ScriptDir 'app.ico' }
+    $hubIco = Join-Path $ScriptDir 'hub.ico'
+    if (Test-Path -LiteralPath $hubIco) { $appIco = $hubIco }
+    elseif (-not (Test-Path -LiteralPath $appIco)) { $appIco = Join-Path $ScriptDir 'app.ico' }
     if (-not (Test-Path -LiteralPath $setIco)) { $setIco = Join-Path $ScriptDir 'setup.ico' }
     $desktop = [Environment]::GetFolderPath('Desktop')
     $sm      = [Environment]::GetFolderPath('Programs')

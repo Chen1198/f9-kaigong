@@ -134,57 +134,66 @@ if ($new -eq $raw -and $raw -notmatch ('"skin"\s*:\s*"' + [regex]::Escape($SetSk
 Say ''
 Say ('[OK] 皮肤已切换为：' + (Get-Label $SetSkin))
 
-# ---------------------------------------------------------------- 桌面图标
+# ---------------------------------------------------------------- 桌面 / 开始菜单图标
+# 【2026-09-26 修】桌面那个「F9开工」就是敲木鱼的启动台，所以：
+#   ① 目标必须走 run-hub.vbs（等价 -Hub，先弹启动台）；以前写的是 -Run，
+#      也就是"跳过启动台直接开工"——换一次皮肤，启动台就没了。
+#   ② 图标必须用 hub.ico（那只木鱼）；以前用皮肤那张闪电图，换皮肤就把木鱼盖掉。
+#   ③ 不再往桌面建「F9开工·设置」：用户 2026-09-25 要求桌面只留 1 个图标，
+#      设置入口只放开始菜单（Install.ps1 的 2h 段负责）。
+#   规则要和 Install.ps1 的 2c / 2h 段保持一致，两边一起改。
+$hubIco = Join-Path $ScriptDir 'hub.ico'
 $appIco = Join-Path $ScriptDir ('skin_' + $SetSkin + '_app.ico')
 $setIco = Join-Path $ScriptDir ('skin_' + $SetSkin + '_setup.ico')
-if (-not (Test-Path -LiteralPath $appIco)) { $appIco = Join-Path $ScriptDir 'app.ico' }
+if (Test-Path -LiteralPath $hubIco) { $appIco = $hubIco }
+elseif (-not (Test-Path -LiteralPath $appIco)) { $appIco = Join-Path $ScriptDir 'app.ico' }
 if (-not (Test-Path -LiteralPath $setIco)) { $setIco = Join-Path $ScriptDir 'setup.ico' }
 
-$main  = Join-Path $ScriptDir 'Start-Workday.ps1'
-$gui   = Join-Path $ScriptDir 'Settings-GUI.ps1'
-$psExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+$main   = Join-Path $ScriptDir 'Start-Workday.ps1'
+$gui    = Join-Path $ScriptDir 'Settings-GUI.ps1'
+$hubVbs = Join-Path $ScriptDir 'run-hub.vbs'
+$psExe  = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 if (-not (Test-Path -LiteralPath $psExe)) { $psExe = 'powershell.exe' }
+$wsExe  = Join-Path $env:SystemRoot 'System32\wscript.exe'
+$useVbs = (Test-Path -LiteralPath $hubVbs) -and (Test-Path -LiteralPath $wsExe)
 
 $desktop   = [Environment]::GetFolderPath('Desktop')
 $startMenu = [Environment]::GetFolderPath('Programs')
 
+function Set-HubShortcut {
+    param($Lnk, [string]$Desc)
+    if ($useVbs) {
+        $Lnk.TargetPath = $wsExe
+        $Lnk.Arguments  = '"' + $hubVbs + '"'
+    } else {
+        $Lnk.TargetPath = $psExe
+        $Lnk.Arguments  = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $main + '" -Hub'
+    }
+    $Lnk.WorkingDirectory = $ScriptDir
+    $Lnk.WindowStyle      = 7
+    $Lnk.Description      = $Desc
+    $Lnk.IconLocation     = $appIco + ',0'
+    $Lnk.Save()
+}
+
 try {
     $ws = New-Object -ComObject WScript.Shell
 
+    # 桌面：只有这一个图标（敲木鱼的启动台）
     $a = $ws.CreateShortcut((Join-Path $desktop 'F9开工.lnk'))
-    $a.TargetPath       = $psExe
-    $a.Arguments        = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $main + '" -Run'
-    $a.WorkingDirectory = $ScriptDir
-    $a.WindowStyle      = 7
-    $a.Description      = 'F9开工：双击一次，把常用的软件和网页全部打开'
-    $a.IconLocation     = $appIco + ',0'
-    $a.Save()
-
-    $b = $ws.CreateShortcut((Join-Path $desktop 'F9开工·设置.lnk'))
-    $b.TargetPath       = $psExe
-    $b.Arguments        = '-NoProfile -ExecutionPolicy Bypass -File "' + $gui + '"'
-    $b.WorkingDirectory = $ScriptDir
-    $b.WindowStyle      = 1
-    $b.Description      = 'F9开工·设置：想打开什么，在这里打勾、粘贴网址'
-    $b.IconLocation     = $setIco + ',0'
-    $b.Save()
-
-    Say '[OK] 桌面图标已更新'
+    Set-HubShortcut $a 'F9开工：双击弹出启动台，敲一下中间那只木鱼就开工'
+    Say '[OK] 桌面图标已更新（木鱼启动台）'
 
     if (Test-Path -LiteralPath $startMenu) {
         $c = $ws.CreateShortcut((Join-Path $startMenu 'F9开工.lnk'))
-        $c.TargetPath       = $psExe
-        $c.Arguments        = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $main + '" -Run'
-        $c.WorkingDirectory = $ScriptDir
-        $c.WindowStyle      = 7
-        $c.IconLocation     = $appIco + ',0'
-        $c.Save()
+        Set-HubShortcut $c 'F9开工：弹出启动台，敲一下中间那只木鱼就开工'
 
         $d = $ws.CreateShortcut((Join-Path $startMenu 'F9开工·设置.lnk'))
         $d.TargetPath       = $psExe
-        $d.Arguments        = '-NoProfile -ExecutionPolicy Bypass -File "' + $gui + '"'
+        $d.Arguments        = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $gui + '"'
         $d.WorkingDirectory = $ScriptDir
-        $d.WindowStyle      = 1
+        $d.WindowStyle      = 7
+        $d.Description      = 'F9开工 · 设置：改清单 / 皮肤 / 快捷键 / 收工倒计时'
         $d.IconLocation     = $setIco + ',0'
         $d.Save()
         Say '[OK] 开始菜单图标已更新'
@@ -206,9 +215,14 @@ $killed = 0
 try {
     $ps = Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue |
         Where-Object {
+            # 【2026-09-26 修】停止条件必须跟 Settings-GUI.ps1 的 Get-DaemonProcs 完全一致：
+            # 只停「常驻待命」那一个（命令行不带任何一次性开关）。
+            # 原来这里只排了 -Run/-Check/-DryRun/-TipTest，漏掉 -Hub、-Sequence、-Main 等 ——
+            # 结果：正开着启动台、或正在开工（-Sequence 正在一个个开软件）时来换皮肤，
+            # 会把那一半活儿硬掐断。这类"判据漏项"以前在后台重启上已经踩过一次。
             $_.ProcessId -ne $PID -and $_.CommandLine -and
             $_.CommandLine -like '*Start-Workday.ps1*' -and
-            $_.CommandLine -notmatch '\-Run|\-Check|\-DryRun|\-TipTest|-SelfTest'
+            $_.CommandLine -notmatch '\-(Sequence|Run|Check|DryRun|TipTest|FanTest|Main|SimTrigger|NoTip|ShowTip|Shutdown|QuitTest|QuitShot|Hub|HubShot|Warm|IconsOnly)\b'
         }
     foreach ($p in $ps) {
         try { Stop-Process -Id $p.ProcessId -Force -ErrorAction Stop; $killed++ } catch { }
