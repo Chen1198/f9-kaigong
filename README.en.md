@@ -8,7 +8,7 @@
 
 ![Launchpad](screenshots/hub-1-launchpad.png)
 
-Double-click the one desktop icon and this **launchpad** appears: a single big ring. Click the ring
+Double-click the one desktop icon and this **launchpad** appears: a single wooden fish. Tap the fish
 and your workday starts — it brightens on hover, and answers with a soft bounce and a short
 electronic chime. The line underneath tells you how many items are on today's list.
 **The launchpad deliberately shows one thing only: start work.**
@@ -47,7 +47,7 @@ ritual can be handed to it.**
 5. Tick the apps you want (【添加软件】 lets you browse for them), paste the URLs you want in ②.
 6. Click **【保存并生效】 (Save and apply)** in the bottom-right.
 7. Every morning from then on: press **`F9`** or **`Ctrl+Alt+W`**. Prefer the mouse?
-   Double-click the desktop icon and click the ring — same thing.
+   Double-click the desktop icon and tap the wooden fish — same thing.
 8. Before you leave: press **`Ctrl+Alt+Q`** — shutdown / restart / sleep, with a countdown you can
    cancel at any point.
 

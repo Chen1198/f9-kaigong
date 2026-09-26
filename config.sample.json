@@ -47,7 +47,7 @@
   "_说明_lang": "界面语言：zh=中文 / en=English",
   "lang": "zh",
 
-  "_说明_iconAction": "双击桌面「F9开工」图标时：panel=弹出启动台，点中间圆环才开工（推荐） / run=跳过启动台直接开工",
+  "_说明_iconAction": "双击桌面「F9开工」图标时：panel=弹出启动台，点中间木鱼才开工（推荐） / run=跳过启动台直接开工",
   "iconAction": "panel",
 
   "apps": [

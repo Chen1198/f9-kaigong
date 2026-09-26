@@ -22,8 +22,8 @@
 #                  桌面上的「F9收工」图标双击走这条路
 #    -QuitTest     只演一遍收工窗口看看长相，绝不真的关机
 #    -QuitShot D   把收工窗口离屏渲染成两张预览图放到目录 D，然后退出
-#    -Hub          桌面上的「F9」图标走这条：弹出赛博朋克主界面（一个大圆环），
-#                  点一下圆环就开工。界面上**只有这一个功能**，收工请按 Ctrl+Alt+Q。
+#    -Hub          桌面上的「F9」图标走这条：弹出白色简约「木鱼」启动台，
+#                  敲一下木鱼就开工。界面上**只有这一个功能**，收工请按 Ctrl+Alt+Q。
 #    -HubShot D    把那个主界面离屏渲染成预览图放到目录 D，然后退出
 # =====================================================================
 
@@ -2709,9 +2709,9 @@ function Show-ShutdownUi {
     }
 }
 
-# ================== 「F9」主界面：赛博朋克启动台 ==================
+# ================== 「F9」主界面：白色简约「木鱼」启动台 ==================
 # 桌面图标双击走这里（-Hub）。界面上能点的只有两处：
-#   中间那个大圆环   -> 开工（主按钮，永远只有这一个）
+#   中间那只木鱼     -> 开工（主按钮，永远只有这一个）
 #   底部一行小字「设置」-> 设置界面
 # 【为什么后来把设置加回来了一行字】原来设置只有开始菜单里那一个入口，
 # 用户直接来问「设置界面去哪里了，怎么调整设置」—— 藏得再深就等于没有。
@@ -2719,11 +2719,11 @@ function Show-ShutdownUi {
 # 收工继续用快捷键 Ctrl+Alt+Q（不占界面、不占图标）。
 #
 # 【为什么贴预渲染的 PNG，而不是现场自绘】这台机器是 2012 年的 i5-3210M。
-# 霓虹辉光、扫描线这类效果用 GDI+ 现场画，既费 CPU 又画不细（进度条那次
-# 已经吃够了自绘的亏）。改成离线画好几张图（art\cyber_*.png），运行时只贴图、
+# 木鱼的渐变、高光、投影这类效果用 GDI+ 现场画，既费 CPU 又画不细（进度条那次
+# 已经吃够了自绘的亏）。改成离线画好几张图（art\muyu_*.png），运行时只贴图、
 # 只换图，零计算量 —— 好看不能拿机器换。
 #
-# 返回 'launch'（点了圆环）/ 'settings'（点了设置）/ 'close'（关掉了）/ ''（窗口没起来）。
+# 返回 'launch'（敲了木鱼）/ 'settings'（点了设置）/ 'close'（关掉了）/ ''（窗口没起来）。
 function Show-HubUi {
     # -ShotDir  离屏渲染预览图然后退出（出图用，用户屏幕上什么都看不到）
     param([string]$ShotDir = '')
@@ -2742,25 +2742,27 @@ function Show-HubUi {
         }
 
         $artDir = Join-Path $ScriptDir 'art'
-        $pBg    = Join-Path $artDir 'cyber_bg.png'
-        $pIdle  = Join-Path $artDir 'cyber_ring.png'
-        $pHit   = Join-Path $artDir 'cyber_ring_hit.png'
-        $pWav   = Join-Path $artDir 'cyber_launch.wav'
+        $pBg    = Join-Path $artDir 'muyu_bg.png'
+        $pIdle  = Join-Path $artDir 'muyu_idle.png'
+        $pHov   = Join-Path $artDir 'muyu_hover.png'
+        $pHit   = Join-Path $artDir 'muyu_hit.png'
+        $pWav   = Join-Path $artDir 'muyu_tap.wav'
         if (-not (Test-Path -LiteralPath $pIdle)) {
             Write-Log ('缺少美术资源：' + $pIdle + ' —— 主界面起不来，重新跑一遍 install.bat 就好')
             return ''
         }
 
-        $cBg      = [System.Drawing.Color]::FromArgb(6, 8, 11)
-        $cNeon    = [System.Drawing.Color]::FromArgb(0, 240, 200)
-        $cNeonHot = [System.Drawing.Color]::FromArgb(140, 255, 236)
-        $cDim     = [System.Drawing.Color]::FromArgb(0, 120, 104)
-        # 「设置」小字用这个：比装饰字的暗色亮一点，看得见；又远不如圆环亮，不抢注意力
-        $cSetIdle = [System.Drawing.Color]::FromArgb(0, 170, 148)
+        # 白色简约版：底是近白、字是近黑，整个界面只有一个"有色"的东西 = 木鱼本身
+        $cBg      = [System.Drawing.Color]::FromArgb(250, 250, 249)
+        $cNeon    = [System.Drawing.Color]::FromArgb(150, 150, 154)   # 状态行那种次级灰
+        $cNeonHot = [System.Drawing.Color]::FromArgb(42, 42, 46)      # 鼠标停上去变近黑
+        $cDim     = [System.Drawing.Color]::FromArgb(186, 186, 190)   # 装饰字 / ✕ 用的浅灰
+        # 「设置」小字用这个：比装饰字看得见一点，又远不如木鱼抢注意力
+        $cSetIdle = [System.Drawing.Color]::FromArgb(166, 166, 170)
 
         $W  = 440
         $H  = 500
-        $RS = 320                        # 圆环图的边长
+        $RS = 320                        # 木鱼图的边长
         $RX = [int](($W - $RS) / 2)
         $RY = 100
 
@@ -2781,9 +2783,12 @@ function Show-HubUi {
             $f.BackgroundImageLayout = 'None'
         }
 
-        # ---- 中间那个大圆环：整个界面唯一的操作入口 ----
+        # ---- 中间那只木鱼：整个界面唯一的操作入口 ----
         $imgIdle = [System.Drawing.Image]::FromFile($pIdle)
+        # 悬停 / 按下这两张缺了就自动退回常态那张，不至于"鼠标一移上去木鱼就没了"
+        $imgHov  = $imgIdle
         $imgHit  = $null
+        if (Test-Path -LiteralPath $pHov) { $imgHov = [System.Drawing.Image]::FromFile($pHov) }
         if (Test-Path -LiteralPath $pHit) { $imgHit = [System.Drawing.Image]::FromFile($pHit) }
 
         $pic = New-Object System.Windows.Forms.PictureBox
@@ -2795,7 +2800,10 @@ function Show-HubUi {
         $pic.Cursor    = [System.Windows.Forms.Cursors]::Hand
         $f.Controls.Add($pic)
         # 回调是另一个作用域：图片引用只能从 $script: 里拿
-        $pic.Add_MouseEnter({ if ($script:HUi -and $script:HUi.Hit) { $this.Image = $script:HUi.Hit } })
+        # 【悬停和"敲下去"必须是两张图】以前只有两张图，鼠标一划过就贴按下态 ——
+        # 等于把"敲击瞬间"的波纹当成了悬停效果。结果出图时鼠标扫过窗口，
+        # 截出来的"常态图"上一圈圈波纹，看着就像画错了。
+        $pic.Add_MouseEnter({ if ($script:HUi) { $this.Image = $script:HUi.Hov } })
         $pic.Add_MouseLeave({ if ($script:HUi) { $this.Image = $script:HUi.Idle } })
         $pic.Add_Click({ $script:HubChoice = 'launch' })
 
@@ -2819,7 +2827,7 @@ function Show-HubUi {
         $ttHub.SetToolTip($btnX, (TP '关掉窗口，什么都不做' 'Close without doing anything'))
 
         # ---- 左上角那行 HOTKEY 是运行时装上去的，不是烘在背景图里的 ----
-        # 【为什么】背景图（art\cyber_bg.png）原来画死了 'HOTKEY // F9'。
+        # 【为什么】背景图（art\muyu_bg.png）原来画死了 'HOTKEY // F9'。
         # 用户一旦在设置里把快捷键改成别的，启动台还在那说 F9 —— 屏幕上的字和真实行为
         # 不一致，是最容易被当成「这软件坏了」的那类问题。所以背景图不再画这行，
         # 改由这里按 config.json 现场拼出真快捷键。
@@ -2848,7 +2856,7 @@ function Show-HubUi {
         $f.Controls.Add($lblHk)
 
         # ---- 底部一行小字「设置」：设置界面的入口 ----
-        # 刻意做得小、做得暗：主按钮仍然只有中间那个圆环一个。
+        # 刻意做得小、做得暗：主按钮仍然只有中间那只木鱼一个。
         # 但它有中文名字、就摆在屏幕上、鼠标停上去会亮 —— 所以不会像原来那样"谁也找不到"。
         $lblSet = New-Object System.Windows.Forms.Label
         $lblSet.Text      = (TP '设置' 'Settings')
@@ -2866,7 +2874,7 @@ function Show-HubUi {
         $lblSet.Add_Click({ $script:HubChoice = 'settings' })
         $ttHub.SetToolTip($lblSet, (TP '打开设置：改清单、皮肤、快捷键、收工倒计时' 'Settings: apps, skin, hotkeys, timer'))
 
-        # ---- 圆环下面一行状态：今天要开几项（真实数字，不是装饰）----
+        # ---- 木鱼下面一行状态：今天要开几项（真实数字，不是装饰）----
         $nItems = 0
         try {
             $cfHub = Get-LauncherConfig
@@ -2888,7 +2896,7 @@ function Show-HubUi {
         $f.Controls.Add($lblSt)
 
         # 控件袋：事件回调里只有 $script: 看得见，所以引用全塞进一个哈希表
-        $script:HUi = @{ Form = $f; Pic = $pic; Idle = $imgIdle; Hit = $imgHit
+        $script:HUi = @{ Form = $f; Pic = $pic; Idle = $imgIdle; Hov = $imgHov; Hit = $imgHit
                          Neon = $cNeon; Hot = $cNeonHot; Dim = $cDim; SetIdle = $cSetIdle }
 
         # Esc = 关掉（什么都不做）；点右上角 ✕ 同理
@@ -2925,6 +2933,10 @@ function Show-HubUi {
                 }
                 $f.Location = New-Object System.Drawing.Point(-4000, -4000)
                 $f.Show()
+                # 钉回常态：Show 的过程中鼠标若扫过控件会触发 MouseEnter，把图换成悬停态，
+                # 那样拍出来的"常态图"其实是悬停图（这个坑刚踩过，看图才发现）。
+                try { $pic.Image = $imgIdle } catch { }
+                try { $pic.Refresh() } catch { }
                 for ($i = 0; $i -lt 10; $i++) {
                     [System.Windows.Forms.Application]::DoEvents()
                     Start-Sleep -Milliseconds 20
@@ -2980,7 +2992,7 @@ function Show-HubUi {
         }
         $choice = [string]$script:HubChoice
 
-        # 点了圆环：先给一下"敲击"的反馈（亮图 + 电子音 + 轻微回弹），再去开工。
+        # 敲了木鱼：先给一下"敲击"的反馈（亮图 + 木质敲击声 + 轻微回弹），再去开工。
         # 这点反馈很关键 —— 它把"我点了"和"它动了"连起来，
         # 用户才不会怀疑"到底点上了没有"（他之前就抱怨过"按了没反应"）。
         if ($choice -eq 'launch') {
@@ -3787,7 +3799,7 @@ if ($Shutdown) {
 
 # ================== 桌面「F9开工」图标：启动台 ==================
 # 桌面上的「F9开工」图标双击就跑这个。窗口里只有两处能点：
-#   点中间的大圆环 -> 和 -Run 一模一样（进度窗、去重、彩蛋，全都有）
+#   敲中间那只木鱼 -> 和 -Run 一模一样（进度窗、去重、彩蛋，全都有）
 #   点底部的小字「设置」-> 打开设置界面（跟 -Main 是同一个窗口）
 # 后台在不在跑都无所谓：这条路上窗口是本进程自己弹的。
 if ($HubShot) {

@@ -2,7 +2,7 @@
 #  Workday Launcher  ·  安装
 #  1) 开机后自动在后台待命（在启动文件夹写一个 .vbs，不需要管理员权限）
 #  2) 桌面放**一个**图标：
-#     ·「F9开工」双击弹出启动台（中间一个大圆环），点一下圆环就开工。
+#     ·「F9开工」双击弹出启动台（中间一只木鱼），敲一下木鱼就开工。
 #       不想每次都看一眼启动台？在设置里把「双击桌面图标」改成「直接开工」即可。
 #     ·收工不占图标：按 Ctrl+Alt+Q 弹「关机 / 重启 / 睡眠」窗口（带倒计时，能取消）。
 #       想让收工也有个桌面图标：走设置面板上那个按钮（对应 -WithQuitIcon，见 2g）。
@@ -149,9 +149,9 @@ try {
     Write-Output ('[WARN] 生成 .vbs 启动器失败: ' + $_.Exception.Message)
 }
 
-# ---- 2b) 桌面快捷方式：只放一个「F9开工」，双击 = 赛博朋克启动台 ----
+# ---- 2b) 桌面快捷方式：只放一个「F9开工」，双击 = 白色简约木鱼启动台 ----
 # 【2026-09-25 改成"二合一"】以前桌面摆两个图标（F9开工 / F9收工），
-# 现在合成一个：双击弹出启动台（中间一个大圆环），点一下圆环就开工。
+# 现在合成一个：双击弹出启动台（中间一只木鱼），敲一下木鱼就开工。
 # 收工没有丢 —— 它回到快捷键 Ctrl+Alt+Q（后台注册的全局热键，跟桌面图标无关）。
 #
 # 目标优先用 wscript 跑 .vbs（零黑框）；wscript 不在就退回直接跑 powershell。
@@ -160,7 +160,7 @@ $wscriptExe = Join-Path $SysRoot 'System32\wscript.exe'
 $hubVbsOk = $false
 try {
     $vbs = New-QuietStarterVbs -ExePath $psExe -ScriptPath $main -ExtraArgs '-Hub' `
-              -Comment1 'Workday Launcher - cyber launch pad (click the ring to start the day)' `
+              -Comment1 'Workday Launcher - click the wooden fish to start the day' `
               -Comment2 'Do not edit by hand: the doubled quotes are required by VBScript'
     [System.IO.File]::WriteAllText($hubVbs, $vbs, $ascii)
     $hubVbsOk = Test-VbsSyntax -Path $hubVbs
@@ -186,7 +186,7 @@ try {
     }
     $lnk.WorkingDirectory = $ScriptDir
     $lnk.WindowStyle      = 7
-    $lnk.Description      = 'F9开工：双击弹出启动台，点一下中间那个大圆环就开工'
+    $lnk.Description      = 'F9开工：双击弹出启动台，敲一下中间那只木鱼就开工'
     if (Test-Path -LiteralPath $hubIco) { $lnk.IconLocation = $hubIco + ',0' }
     elseif (Test-Path -LiteralPath $appIco) { $lnk.IconLocation = $appIco + ',0' }
     $lnk.Save()
@@ -328,7 +328,7 @@ if (-not $startMenu) {
 }
 foreach ($sm in @(
     @{ Name = 'F9开工';      Kind = 'hub'; Ico = $hubIco;
-       Desc = 'F9开工：弹出启动台，点一下中间那个大圆环就开工' },
+       Desc = 'F9开工：弹出启动台，敲一下中间那只木鱼就开工' },
     @{ Name = 'F9开工·设置'; Kind = 'gui'; Ico = $setIco;
        Desc = 'F9开工 · 设置：改清单 / 皮肤 / 快捷键 / 收工倒计时' }
 )) {
@@ -405,7 +405,7 @@ try {
 
 Write-Output ''
 Write-Output '安装完成。'
-Write-Output '桌面上只留一个「F9开工」：双击弹出启动台，点一下中间那个大圆环就开工。'
+Write-Output '桌面上只留一个「F9开工」：双击弹出启动台，敲一下中间那只木鱼就开工。'
 Write-Output '想改清单 / 皮肤 / 彩蛋：点启动台底部那行小字「设置」，'
 Write-Output '                       或者开始菜单里的「F9开工·设置」（是同一个窗口）。'
 Write-Output '收工：按 Ctrl+Alt+Q = 关机 / 重启 / 睡眠（带倒计时，随时能取消）。'
